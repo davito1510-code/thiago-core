@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Operativa Integrada con Gmail.
+Núcleo Central de Thiago - Versión Operativa Directa.
 Diseñado para el Prof. David Villarreal.
 """
 
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
 import os
-from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "clave-segura-thiago")
+
+# Configuración para permitir HTTP en desarrollo/Render (obligatorio para OAuth fuera de localhost si usa proxy)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -33,6 +37,7 @@ HTML_TEMPLATE = """
         button:hover { background-color: #7dd3fc; }
         .mic-btn { background-color: #ef4444; color: white; }
         .mic-btn.listening { background-color: #22c55e; animation: pulse 1.5s infinite; }
+        .auth-link { color: #38bdf8; text-decoration: underline; cursor: pointer; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
@@ -61,16 +66,11 @@ HTML_TEMPLATE = """
         function hablar(texto) {
             if (!('speechSynthesis' in window)) return;
             window.speechSynthesis.cancel();
-            
             const utterance = new SpeechSynthesisUtterance(texto);
             utterance.lang = 'es-ES';
             utterance.rate = 1.0;
-
             const vozEspanol = vocesDisponibles.find(v => v.lang.startsWith('es'));
-            if (vozEspanol) {
-                utterance.voice = vozEspanol;
-            }
-
+            if (vozEspanol) utterance.voice = vozEspanol;
             window.speechSynthesis.speak(utterance);
         }
 
@@ -83,20 +83,17 @@ HTML_TEMPLATE = """
             recognition.lang = 'es-ES';
             recognition.continuous = false;
             recognition.interimResults = false;
-
             recognition.onstart = () => {
                 escuchando = true;
                 const btn = document.getElementById('micBtn');
                 btn.classList.add('listening');
                 btn.textContent = '🔴 Escuchando...';
             };
-
             recognition.onresult = (event) => {
                 const textoTranscrito = event.results[0][0].transcript;
                 document.getElementById('userInput').value = textoTranscrito;
                 enviarMensaje();
             };
-
             recognition.onerror = () => { detenerEscucha(); };
             recognition.onend = () => { detenerEscucha(); };
         } else {
@@ -108,11 +105,7 @@ HTML_TEMPLATE = """
                 alert("Su navegador no soporta reconocimiento de voz nativo. Utilice Google Chrome.");
                 return;
             }
-            if (escuchando) {
-                recognition.stop();
-            } else {
-                recognition.start();
-            }
+            if (escuchando) { recognition.stop(); } else { recognition.start(); }
         }
 
         function detenerEscucha() {
@@ -139,9 +132,14 @@ HTML_TEMPLATE = """
                     body: JSON.stringify({ message: texto })
                 });
                 const data = await response.json();
-                chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
+                
+                if (data.auth_url) {
+                    chatBox.innerHTML += `<div class="message ai-msg">Para leer sus correos, primero debe autorizar el acceso único haciendo clic aquí: <a href="${data.auth_url}" target="_blank" class="auth-link">Autorizar Gmail</a></div>`;
+                } else {
+                    chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
+                    hablar(data.reply);
+                }
                 chatBox.scrollTop = chatBox.scrollHeight;
-                hablar(data.reply);
             } catch (error) {
                 chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
@@ -155,15 +153,24 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def obtener_servicio_gmail():
-    creds = Credentials(
-        token=None,
-        refresh_token=os.environ.get("GOOGLE_REFRESH_TOKEN"),
-        client_id=os.environ.get("GOOGLE_CLIENT_ID"),
-        client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-        token_uri="https://oauth2.googleapis.com/token"
+def obtener_cliente_oauth():
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    
+    client_config = {
+        "web": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    }
+    
+    return Flow.from_client_config(
+        client_config,
+        scopes=['https://www.googleapis.com/auth/gmail.readonly'],
+        redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI", "https://thiago-core.onrender.com/oauth2callback")
     )
-    return build('gmail', 'v1', credentials=creds)
 
 @app.route("/")
 def index():
@@ -171,7 +178,24 @@ def index():
 
 @app.route("/oauth2callback")
 def oauth2callback():
-    return "Autorización OAuth sincronizada correctamente.", 200
+    code = request.args.get("code")
+    if not code:
+        return "Error: No se recibió código de autorización de Google.", 400
+    
+    try:
+        flow = obtener_cliente_oauth()
+        flow.fetch_token(code=code)
+        session['credentials'] = {
+            'token': flow.credentials.token,
+            'refresh_token': flow.credentials.refresh_token,
+            'token_uri': flow.credentials.token_uri,
+            'client_id': flow.credentials.client_id,
+            'client_secret': flow.credentials.client_secret,
+            'scopes': flow.credentials.scopes
+        }
+        return redirect(url_for('index'))
+    except Exception as e:
+        return f"Error al procesar el token OAuth: {str(e)}", 500
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
@@ -179,21 +203,28 @@ def chat():
     msg = data.get("message", "").strip()
     msg_lower = msg.lower()
     
-    client_id = os.environ.get("GOOGLE_CLIENT_ID")
-    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-    refresh_token = os.environ.get("GOOGLE_REFRESH_TOKEN")
-    
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
     if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "davito"]):
-        if not client_id or not client_secret:
-            return jsonify({"reply": "Error crítico: Faltan las credenciales GOOGLE_CLIENT_ID o GOOGLE_CLIENT_SECRET en Render."})
-        if not refresh_token:
-            return jsonify({"reply": "Falta configurar la variable GOOGLE_REFRESH_TOKEN en Render para permitir el acceso a la bandeja."})
+        creds_data = session.get('credentials')
+        
+        if not creds_data:
+            try:
+                flow = obtener_cliente_oauth()
+                auth_url, _ = flow.authorization_url(
+                    access_type='offline',
+                    include_granted_scopes='true',
+                    prompt='consent'
+                )
+                return jsonify({"auth_url": auth_url})
+            except Exception as e:
+                return jsonify({"reply": f"Error generando enlace de autorización: {str(e)}"})
         
         try:
-            service = obtener_servicio_gmail()
+            from google.oauth2.credentials import Credentials
+            creds = Credentials(**creds_data)
+            service = build('gmail', 'v1', credentials=creds)
             results = service.users().messages().list(userId='me', maxResults=3).execute()
             messages = results.get('messages', [])
             
@@ -210,7 +241,15 @@ def chat():
             
             return jsonify({"reply": "Últimos correos detectados:\n\n" + "\n\n".join(lista_mails)})
         except Exception as e:
-            return jsonify({"reply": f"Error en la conexión con la API de Gmail: {str(e)}"})
+            # Si el token guardado en sesión falló, limpiamos la sesión para pedir autorización de nuevo
+            session.pop('credentials', None)
+            try:
+                flow = obtener_cliente_oauth()
+                auth_url, _ = flow.authorization_url(access_type='offline', include_granted_scopes='true', prompt='consent')
+                return jsonify({"auth_url": auth_url})
+            except Exception as inner_e:
+                return jsonify({"reply": f"Error en la conexión con la API de Gmail: {str(e)}"})
+                
     elif any(k in msg_lower for k in ["hola", "thiago", "saludos"]):
         return jsonify({"reply": "Hola, profesor David. A su disposición."})
     else:
