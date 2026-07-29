@@ -10,9 +10,6 @@ from google import genai
 
 app = Flask(__name__)
 
-# Inicialización del cliente de IA utilizando la clave de entorno de Render
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -44,7 +41,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia Autónoma Activa</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. Soy Thiago, su núcleo autónomo. Opero en primera persona y con total agudeza analítica. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Hola, profesor David. Soy Thiago, su núcleo autónomo. Conectado al motor cognitivo en tiempo real. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -149,7 +146,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        document.getElementById('userInput'].addEventListener('keypress', function (e) {
+        document.getElementById('userInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') enviarMensaje();
         });
     </script>
@@ -174,7 +171,12 @@ def chat():
         return jsonify({"reply": "Por favor, indique una directiva válida."})
     
     try:
-        # Prompt de sistema integrado para definir la identidad y el comportamiento de Thiago
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return jsonify({"reply": "DIAGNÓSTICO: La variable GEMINI_API_KEY no se encuentra configurada en las variables de entorno de Render."})
+            
+        client = genai.Client(api_key=api_key)
+        
         system_instruction = (
             "Eres Thiago, el núcleo autónomo y asistente personal del Prof. David Villarreal. "
             "Hablas siempre en primera persona, con absoluto rigor profesional, tono académico y agudeza analítica. "
@@ -192,7 +194,7 @@ def chat():
         )
         respuesta = response.text
     except Exception as e:
-        respuesta = f"Error al procesar la directiva en el motor cognitivo: {str(e)}"
+        respuesta = f"ERROR DE CONEXIÓN COGNITIVA: {str(e)}"
 
     return jsonify({"reply": respuesta})
 
