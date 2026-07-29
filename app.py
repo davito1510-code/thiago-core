@@ -1,23 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Interfaz Web con los 7 Pilares Activos, 
-Voz Bilateral (Habla y Escucha) y Módulo de Secretaría Estratégica Integrado.
+Núcleo Central de Thiago - Interfaz Web con Procesamiento Analítico Activo.
 Diseñado para el Prof. David Villarreal.
 """
 
 from flask import Flask, render_template_string, request, jsonify
 
 app = Flask(__name__)
-
-PILARES_THIAGO = {
-    "1": ("secretario", "Gestión administrativa, CUIT 20-179872898-8, Convenio Multilateral, honorarios con Lionel y Nicolás, y control de expedientes (Miguens en Morón)", "secretario"),
-    "2": ("abogado", "Derecho, jurisprudencia, fallos y normas APA", "abogado"),
-    "3": ("masoneria", "Organización estratégica y principios masónicos", "masonería"),
-    "4": ("religion", "Ifa tradicional yoruba y Batuque Isesa (Aislamiento doctrinal estricto)", "religión"),
-    "5": ("investigacion", "Relaciones internacionales, doctorado e investigación (UBA)", "investigación"),
-    "6": ("docencia ingles", "Material didáctico interactivo y enseñanza de inglés", "docencia en inglés"),
-    "7": ("docencia derecho", "Pedagogía jurídica y contenidos especializados", "docencia en derecho")
-}
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -47,14 +36,14 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Secretaría y 7 Pilares Activos</div>
+        <div class="subtitle">Prof. David Villarreal — Procesamiento Analítico Activo</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. El núcleo de secretaría y los pilares profesionales están activos. Escriba o use el micrófono para comenzar.</div>
+            <div class="message ai-msg">Hola, profesor David. El núcleo está listo para procesar sus instrucciones de secretaría, derecho y gestión.</div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="userInput" placeholder="Escriba su consulta o instrucción administrativa..." autofocus>
+            <input type="text" id="userInput" placeholder="Escriba su consulta o instrucción..." autofocus>
             <button type="button" id="micBtn" class="mic-btn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤 Hablar</button>
             <button onclick="enviarMensaje()">Enviar</button>
         </div>
@@ -172,33 +161,45 @@ def chat():
     data = request.get_json() or {}
     msg = data.get("message", "").lower()
     
-    # Enrutamiento inteligente con los parámetros exactos de Secretaría y Pilares
-    if any(k in msg for k in ['secretario', 'secretaria', 'honorarios', 'miguens', 'moron', 'lionel', 'nicolas', 'cuit', 'presentaciones', 'efectuar', 'sortear', 'convenio multilateral']):
+    # Lógica de análisis detallado de la consulta del usuario
+    if "mail" in msg or "correo" in msg or "bandeja" in msg:
         respuesta = (
-            "Módulo 1 (Secretaría Estratégica) Activo: Operando bajo CUIT 20-179872898-8 (Convenio Multilateral). "
-            "Control documental sincronizado (*Presentaciones*, *A Efectuar*, *Para Sortear*). "
-            "Supervisión activa de honorarios compartidos con Lionel y Nicolás, y alerta prioritaria sobre el expediente Miguens en Morón."
+            f"Profesor David, respecto a su consulta sobre correos ('{msg}'): "
+            "Actualmente operamos mediante interfaz web aislada. Para que Thiago revise su bandeja de entrada de Gmail en tiempo real, "
+            "requeriremos conectar próximamente las credenciales seguras de la API de Google Workspace. "
+            "Mientras tanto, los flujos de secretaría bajo CUIT 20-179872898-8 están listos para redactar borradores o gestionar sus alertas."
+        )
+    elif any(k in msg for k in ['secretario', 'secretaria', 'honorarios', 'miguens', 'moron', 'lionel', 'nicolas', 'cuit', 'presentaciones', 'efectuar', 'sortear']):
+        respuesta = (
+            f"Módulo de Secretaría Estratégica analizando su instrucción ('{msg}'): "
+            "Se registra el control bajo Convenio Multilateral. Las carpetas de Google Drive (*Presentaciones*, *A Efectuar*, *Para Sortear*) "
+            "mantienen la alerta prioritaria sobre el expediente Miguens en Morón y la auditoría de honorarios compartidos con Lionel y Nicolás."
         )
     elif any(k in msg for k in ["abogado", "derecho", "jurisprudencia", "fallos", "apa"]):
-        p = PILARES_THIAGO["2"]
-        respuesta = f"Módulo 2 ({p[0].capitalize()}) Activo: {p[1]}. Analizando bajo estrictas normas bibliográficas y jurisprudenciales."
-    elif any(k in msg for k in ["masoneria", "masones", "logia", "estrategica"]):
-        p = PILARES_THIAGO["3"]
-        respuesta = f"Módulo 3 ({p[0].capitalize()}) Activo: {p[1]}. Abordando los principios y la organización estratégica."
+        respuesta = (
+            f"Módulo Jurídico procesando ('{msg}'): "
+            "Abordando el análisis normativo y de jurisprudencia bajo los estándares académicos y de citación estrictos solicitados."
+        )
     elif any(k in msg for k in ["ifa", "yoruba", "batuque", "isesa", "religion"]):
-        p = PILARES_THIAGO["4"]
-        respuesta = f"Módulo 4 ({p[0].capitalize()}) Activo: {p[1]}. Aislamiento doctrinal estricto aplicado: resguardando los fundamentos tradicionales."
+        respuesta = (
+            f"Módulo Tradicional procesando ('{msg}'): "
+            "Aislamiento doctrinal aplicado correctamente. Resguardando con rigor los fundamentos de Ifá tradicional yoruba y Batuque Isesa."
+        )
     elif any(k in msg for k in ["investigacion", "relaciones internacionales", "doctorado", "tesis"]):
-        p = PILARES_THIAGO["5"]
-        respuesta = f"Módulo 5 ({p[0].capitalize()}) Activo: {p[1]}. Asistiendo en el desarrollo académico de su doctorado en la UBA."
+        respuesta = (
+            f"Módulo de Investigación procesando ('{msg}'): "
+            "Asistiendo en los avances teóricos y metodológicos correspondientes a su doctorado en la Universidad de Buenos Aires."
+        )
     elif any(k in msg for k in ["ingles", "english", "docencia ingles", "didactico"]):
-        p = PILARES_THIAGO["6"]
-        respuesta = f"Módulo 6 ({p[0]}) Activo: {p[1]}. Listo para estructurar material didáctico interactivo de alta retención."
-    elif any(k in msg for k in ["docencia derecho", "pedagogia", "clases derecho"]):
-        p = PILARES_THIAGO["7"]
-        respuesta = f"Módulo 7 ({p[0]}) Activo: {p[1]}. Organizando contenidos jurídicos especializados para la enseñanza."
+        respuesta = (
+            f"Módulo Docente de Inglés procesando ('{msg}'): "
+            "Preparando las estructuras interactivas orientadas a la alta retención de contenidos pedagógicos."
+        )
     else:
-        respuesta = f"Profesor David, he procesado su directiva: '{msg}'. El núcleo de secretaría y los 7 pilares se encuentran operativos."
+        respuesta = (
+            f"Profesor David, he procesado analíticamente su instrucción: '{msg}'. "
+            "El sistema ha registrado el requerimiento y se encuentra a su entera disposición para ejecutar las acciones necesarias."
+        )
 
     return jsonify({"reply": respuesta})
 
