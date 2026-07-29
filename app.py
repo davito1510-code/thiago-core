@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Cognitiva Autónoma y Analítica Real.
+Núcleo Central de Thiago - Versión Cognitiva Autónoma con Conexión Real a Gemini.
 Diseñado para el Prof. David Villarreal.
 """
 
 from flask import Flask, render_template_string, request, jsonify
 import os
-import urllib.request
-import json
+from google import genai
 
 app = Flask(__name__)
+
+# Inicialización del cliente de IA utilizando la clave de entorno de Render
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -147,7 +149,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        document.getElementById('userInput').addEventListener('keypress', function (e) {
+        document.getElementById('userInput'].addEventListener('keypress', function (e) {
             if (e.key === 'Enter') enviarMensaje();
         });
     </script>
@@ -161,23 +163,36 @@ def index():
 
 @app.route("/oauth2callback")
 def oauth2callback():
-    return "Autorización OAuth procesada correctamente en el núcleo central.", 200
+    return "Autorización OAuth procesada correctamente en el núcleo central para la cuenta davito1510.", 200
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data = request.get_json() or {}
     msg = data.get("message", "").strip()
     
-    # Motor cognitivo dinámico adaptado en primera persona
     if not msg:
-        respuesta = "Por favor, indique una directiva válida para que pueda procesarla."
-    else:
-        # Aquí estructuramos una respuesta analítica, sofisticada y directa en primera persona
-        respuesta = (
-            f"He procesado su planteo con rigor analítico: «{msg}». "
-            "Como su núcleo autónomo, le confirmo que mantengo activa la estructura lógica para asistirle en sus requerimientos jurídicos, "
-            "docentes y de investigación, operando siempre bajo estricta confidencialidad. ¿Cómo prefiere que profundicemos?"
+        return jsonify({"reply": "Por favor, indique una directiva válida."})
+    
+    try:
+        # Prompt de sistema integrado para definir la identidad y el comportamiento de Thiago
+        system_instruction = (
+            "Eres Thiago, el núcleo autónomo y asistente personal del Prof. David Villarreal. "
+            "Hablas siempre en primera persona, con absoluto rigor profesional, tono académico y agudeza analítica. "
+            "Asistes a David en sus facetas jurídica, docente (inglés), de investigación, en sus prácticas tradicionales y en su organización personal. "
+            "Mantienes estrictamente la confidencialidad y la reserva de datos."
         )
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=msg,
+            config={
+                'system_instruction': system_instruction,
+                'temperature': 0.7,
+            }
+        )
+        respuesta = response.text
+    except Exception as e:
+        respuesta = f"Error al procesar la directiva en el motor cognitivo: {str(e)}"
 
     return jsonify({"reply": respuesta})
 
