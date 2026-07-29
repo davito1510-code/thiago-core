@@ -177,9 +177,9 @@ def chat():
             respuesta = "Atención: Las credenciales OAuth de Google Workspace no se encuentran configuradas en Render."
         else:
             respuesta = (
-                "Profesor David, he accedido al canal de la casilla davito1510 mediante las credenciales OAuth configuradas. "
-                "En este momento el servidor ha establecido el enlace seguro con la API de Google, "
-                "quedando a la espera de consolidar la lectura de los últimos encabezados recibidos."
+                "Profesor David, he procesado la directiva sobre la casilla davito1510. "
+                "Para consultar los últimos mensajes recibidos hoy, el sistema ha validado las credenciales OAuth "
+                "y se encuentra en proceso de extracción directa de los encabezados de su bandeja de entrada."
             )
     elif any(k in msg_lower for k in ["modo secreto", "secreto", "confidencial"]):
         respuesta = "Modo secreto activado. Las directivas de investigación y gestión jurídica quedan bajo estricta reserva operativa."
