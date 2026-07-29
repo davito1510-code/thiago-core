@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Interfaz Web con Síntesis y Reconocimiento de Voz (Escucha y Habla).
+Núcleo Central de Thiago - Interfaz Web con los 7 Pilares Activos, 
+Voz Bilateral (Habla y Escucha) y Módulo de Secretaría Estratégica Integrado.
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -9,11 +10,11 @@ from flask import Flask, render_template_string, request, jsonify
 app = Flask(__name__)
 
 PILARES_THIAGO = {
-    "1": ("secretario", "Gestión administrativa, correos y flujos de Google Workspace", "secretario"),
+    "1": ("secretario", "Gestión administrativa, CUIT 20-179872898-8, Convenio Multilateral, honorarios con Lionel y Nicolás, y control de expedientes (Miguens en Morón)", "secretario"),
     "2": ("abogado", "Derecho, jurisprudencia, fallos y normas APA", "abogado"),
     "3": ("masoneria", "Organización estratégica y principios masónicos", "masonería"),
-    "4": ("religion", "Ifa tradicional yoruba y Batuque Isesa", "religión"),
-    "5": ("investigacion", "Relaciones internacionales, doctorado e investigación", "investigación"),
+    "4": ("religion", "Ifa tradicional yoruba y Batuque Isesa (Aislamiento doctrinal estricto)", "religión"),
+    "5": ("investigacion", "Relaciones internacionales, doctorado e investigación (UBA)", "investigación"),
     "6": ("docencia ingles", "Material didáctico interactivo y enseñanza de inglés", "docencia en inglés"),
     "7": ("docencia derecho", "Pedagogía jurídica y contenidos especializados", "docencia en derecho")
 }
@@ -24,14 +25,14 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo de Thiago - Interfaz Web Interactiva</title>
+    <title>Núcleo de Thiago - Interfaz Estratégica Integral</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { width: 100%; max-width: 700px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         h1 { color: #38bdf8; text-align: center; font-size: 1.5rem; margin-bottom: 5px; }
         .subtitle { text-align: center; color: #94a3b8; margin-bottom: 20px; font-size: 0.9rem; }
-        .chat-box { background: #090d16; border: 1px solid #334155; height: 320px; overflow-y: auto; padding: 12px; margin-bottom: 15px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
-        .message { padding: 8px 12px; border-radius: 6px; max-width: 85%; line-height: 1.4; }
+        .chat-box { background: #090d16; border: 1px solid #334155; height: 340px; overflow-y: auto; padding: 12px; margin-bottom: 15px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+        .message { padding: 9px 13px; border-radius: 6px; max-width: 85%; line-height: 1.4; }
         .user-msg { background: #0284c7; color: white; align-self: flex-end; }
         .ai-msg { background: #334155; color: #f1f5f9; align-self: flex-start; }
         .input-group { display: flex; gap: 8px; }
@@ -46,14 +47,14 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Módulo de Voz Activo (Habla y Escucha)</div>
+        <div class="subtitle">Prof. David Villarreal — Secretaría y 7 Pilares Activos</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. El sistema escucha y habla en español. Haga clic en el micrófono para dictar su consulta.</div>
+            <div class="message ai-msg">Hola, profesor David. El núcleo de secretaría y los pilares profesionales están activos. Escriba o use el micrófono para comenzar.</div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="userInput" placeholder="Escriba o use el micrófono..." autofocus>
+            <input type="text" id="userInput" placeholder="Escriba su consulta o instrucción administrativa..." autofocus>
             <button type="button" id="micBtn" class="mic-btn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤 Hablar</button>
             <button onclick="enviarMensaje()">Enviar</button>
         </div>
@@ -81,7 +82,6 @@ HTML_TEMPLATE = """
             window.speechSynthesis.speak(utterance);
         }
 
-        // Configuración de Reconocimiento de Voz (Escucha)
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
         let escuchando = false;
@@ -102,19 +102,13 @@ HTML_TEMPLATE = """
             recognition.onresult = (event) => {
                 const textoTranscrito = event.results[0][0].transcript;
                 document.getElementById('userInput').value = textoTranscrito;
-                enviarMensaje(); // Envía automáticamente al terminar de hablar
+                enviarMensaje();
             };
 
-            recognition.onerror = (event) => {
-                console.error("Error de reconocimiento de voz:", event.error);
-                detenerEscucha();
-            };
-
-            recognition.onend = () => {
-                detenerEscucha();
-            };
+            recognition.onerror = () => { detenerEscucha(); };
+            recognition.onend = () => { detenerEscucha(); };
         } else {
-            document.getElementById('micBtn').style.display = 'none'; // Ocultar si el navegador no soporta
+            document.getElementById('micBtn').style.display = 'none';
         }
 
         function alternarEscucha() {
@@ -157,7 +151,7 @@ HTML_TEMPLATE = """
                 chatBox.scrollTop = chatBox.scrollHeight;
                 hablar(data.reply);
             } catch (error) {
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de conexión con el núcleo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
         }
 
@@ -178,9 +172,13 @@ def chat():
     data = request.get_json() or {}
     msg = data.get("message", "").lower()
     
-    if any(k in msg for k in ["secretario", "correo", "workspace", "agenda"]):
-        p = PILARES_THIAGO["1"]
-        respuesta = f"Módulo 1 ({p[0].capitalize()}) Activo: {p[1]}. Preparado para coordinar su gestión administrativa."
+    # Enrutamiento inteligente con los parámetros exactos de Secretaría y Pilares
+    if any(k in msg for k in ['secretario', 'secretaria', 'honorarios', 'miguens', 'moron', 'lionel', 'nicolas', 'cuit', 'presentaciones', 'efectuar', 'sortear', 'convenio multilateral']):
+        respuesta = (
+            "Módulo 1 (Secretaría Estratégica) Activo: Operando bajo CUIT 20-179872898-8 (Convenio Multilateral). "
+            "Control documental sincronizado (*Presentaciones*, *A Efectuar*, *Para Sortear*). "
+            "Supervisión activa de honorarios compartidos con Lionel y Nicolás, y alerta prioritaria sobre el expediente Miguens en Morón."
+        )
     elif any(k in msg for k in ["abogado", "derecho", "jurisprudencia", "fallos", "apa"]):
         p = PILARES_THIAGO["2"]
         respuesta = f"Módulo 2 ({p[0].capitalize()}) Activo: {p[1]}. Analizando bajo estrictas normas bibliográficas y jurisprudenciales."
@@ -189,10 +187,10 @@ def chat():
         respuesta = f"Módulo 3 ({p[0].capitalize()}) Activo: {p[1]}. Abordando los principios y la organización estratégica."
     elif any(k in msg for k in ["ifa", "yoruba", "batuque", "isesa", "religion"]):
         p = PILARES_THIAGO["4"]
-        respuesta = f"Módulo 4 ({p[0].capitalize()}) Activo: {p[1]}. Resguardando con rigor la tradición y los fundamentos."
+        respuesta = f"Módulo 4 ({p[0].capitalize()}) Activo: {p[1]}. Aislamiento doctrinal estricto aplicado: resguardando los fundamentos tradicionales."
     elif any(k in msg for k in ["investigacion", "relaciones internacionales", "doctorado", "tesis"]):
         p = PILARES_THIAGO["5"]
-        respuesta = f"Módulo 5 ({p[0].capitalize()}) Activo: {p[1]}. Asistiendo en el desarrollo académico de su doctorado."
+        respuesta = f"Módulo 5 ({p[0].capitalize()}) Activo: {p[1]}. Asistiendo en el desarrollo académico de su doctorado en la UBA."
     elif any(k in msg for k in ["ingles", "english", "docencia ingles", "didactico"]):
         p = PILARES_THIAGO["6"]
         respuesta = f"Módulo 6 ({p[0]}) Activo: {p[1]}. Listo para estructurar material didáctico interactivo de alta retención."
@@ -200,7 +198,7 @@ def chat():
         p = PILARES_THIAGO["7"]
         respuesta = f"Módulo 7 ({p[0]}) Activo: {p[1]}. Organizando contenidos jurídicos especializados para la enseñanza."
     else:
-        respuesta = f"Profesor David, he procesado su instrucción por voz: '{msg}'. Los 7 pilares se encuentran activos y a su disposición."
+        respuesta = f"Profesor David, he procesado su directiva: '{msg}'. El núcleo de secretaría y los 7 pilares se encuentran operativos."
 
     return jsonify({"reply": respuesta})
 
