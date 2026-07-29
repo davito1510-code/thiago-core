@@ -155,6 +155,17 @@ HTML_TEMPLATE = """
 </html>
 """
 
+def obtener_servicio_gmail():
+    # Carga las credenciales de forma directa y robusta desde las variables de entorno de Render
+    creds = Credentials(
+        token=None,
+        refresh_token=os.environ.get("GOOGLE_REFRESH_TOKEN"),
+        client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+        client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+        token_uri="https://oauth2.googleapis.com/token"
+    )
+    return build('gmail', 'v1', credentials=creds)
+
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
@@ -183,14 +194,7 @@ def chat():
             return jsonify({"reply": "Falta configurar la variable GOOGLE_REFRESH_TOKEN en Render para permitir el acceso a la bandeja."})
         
         try:
-            creds = Credentials(
-                None,
-                refresh_token=refresh_token,
-                client_id=client_id,
-                client_secret=client_secret,
-                token_uri="https://oauth2.googleapis.com/token"
-            )
-            service = build('gmail', 'v1', credentials=creds)
+            service = obtener_servicio_gmail()
             results = service.users().messages().list(userId='me', maxResults=3).execute()
             messages = results.get('messages', [])
             
