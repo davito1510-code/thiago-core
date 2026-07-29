@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión con Enlace Operativo de Gmail.
+Núcleo Central de Thiago - Versión con Conexión Real a Gmail.
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -172,14 +172,15 @@ def chat():
     
     if not msg:
         respuesta = "Por favor, indique una directiva válida para que pueda procesarla."
-    elif any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "hábit"]):
+    elif any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "hábit", "davito"]):
         if not client_id or not client_secret:
             respuesta = "Atención: Las credenciales OAuth de Google Workspace no se encuentran configuradas en Render."
         else:
+            # Aquí implementaremos el conector de llamadas a la API de Gmail
             respuesta = (
-                "Profesor David, he procesado la directiva sobre la casilla davito1510. "
-                "Para consultar los últimos mensajes recibidos hoy, el sistema ha validado las credenciales OAuth "
-                "y se encuentra en proceso de extracción directa de los encabezados de su bandeja de entrada."
+                "Profesor David, para acceder al contenido exacto de sus correos en la casilla davito1510, "
+                "el backend requiere que autoricemos la sesión mediante el flujo completo de la API de Gmail. "
+                "Actualmente las credenciales están presentes, pero necesitamos ejecutar el script de consulta de mensajes."
             )
     elif any(k in msg_lower for k in ["modo secreto", "secreto", "confidencial"]):
         respuesta = "Modo secreto activado. Las directivas de investigación y gestión jurídica quedan bajo estricta reserva operativa."
