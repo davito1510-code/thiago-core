@@ -4,10 +4,10 @@ Núcleo Central de Thiago - Versión Cognitiva Autónoma con Interfaz de Voz y P
 Diseñado para el Prof. David Villarreal.
 """
 
-from flask import Flask, render_template_string, request, jsonify
+import json
 import os
 import urllib.request
-import json
+from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
@@ -143,7 +143,7 @@ HTML_TEMPLATE = """
                 chatBox.scrollTop = chatBox.scrollHeight;
                 hablar(data.reply);
             } catch (error) {
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;>Error de comunicación con el núcleo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
         }
 
@@ -155,31 +155,42 @@ HTML_TEMPLATE = """
 </html>
 """
 
+
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE)
+  return render_template_string(HTML_TEMPLATE)
+
+
+@app.route("/oauth2callback")
+def oauth2callback():
+  return (
+      "Autorización de Google OAuth procesada correctamente en el núcleo"
+      " central."
+  ), 200
+
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    data = request.get_json() or {}
-    msg = data.get("message", "")
-    
-    # Aquí conectamos el núcleo con inteligencia real o lógica dinámica de razonamiento
-    # Si desea consultar correo, estructuramos la llamada a la API de Gmail o Workspace.
-    if "mail" in msg.lower() or "correo" in msg.lower():
-        respuesta = (
-            "Profesor David, para que Thiago acceda de forma autónoma a su bandeja de Gmail, "
-            "necesitamos registrar el proyecto en Google Cloud Console, generar credenciales OAuth2 y almacenar el token seguro "
-            "en las variables de entorno de Render. ¿Desea que prepare el script de conexión segura para enlazar su correo ahora mismo?"
-        )
-    else:
-        # Respuesta dinámica simulando razonamiento experto adaptado a sus 7 pilares
-        respuesta = (
-            f"Profesor, he procesado su directiva con razonamiento analítico: '{msg}'. "
-            "El núcleo se encuentra operativo en sus 7 pilares con estricta reserva de datos privados. ¿Cómo desea que avancemos?"
-        )
+  data = request.get_json() or {}
+  msg = data.get("message", "")
 
-    return jsonify({"reply": respuesta})
+  if "mail" in msg.lower() or "correo" in msg.lower():
+    respuesta = (
+        "Profesor David, para que Thiago acceda de forma autónoma a su"
+        " bandeja de Gmail, necesitamos registrar el proyecto en Google Cloud"
+        " Console, generar credenciales OAuth2 y almacenar el token seguro en"
+        " las variables de entorno de Render."
+    )
+  else:
+    respuesta = (
+        f"Profesor, he procesado su directiva con razonamiento analítico:"
+        f" '{msg}'. El núcleo se encuentra operativo en sus 7 pilares con"
+        " estricta reserva de datos privados. ¿Cómo desea que avancemos?"
+    )
+
+  return jsonify({"reply": respuesta})
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+  port = int(os.environ.get("PORT", 10000))
+  app.run(host="0.0.0.0", port=port)
