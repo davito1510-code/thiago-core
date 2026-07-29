@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Interfaz Web con Corrección Fonética y Síntesis en Español.
+Núcleo Central de Thiago - Interfaz Web con los 7 Pilares Activos y Corrección Fonética.
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -24,152 +24,54 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo de Thiago - Asistente Estratégico</title>
+    <title>Núcleo de Thiago - Interfaz Web</title>
     <style>
-        :root {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --accent: #38bdf8;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .container {
-            width: 100%;
-            max-width: 800px;
-            background: var(--card-bg);
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-        }
-        h1 {
-            color: var(--accent);
-            text-align: center;
-            font-size: 1.8rem;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            text-align: center;
-            color: var(--text-muted);
-            margin-bottom: 25px;
-            font-size: 0.95rem;
-        }
-        .chat-box {
-            background: #090d16;
-            border: 1px solid #334155;
-            border-radius: 8px;
-            height: 350px;
-            overflow-y: auto;
-            padding: 15px;
-            margin-bottom: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .message {
-            padding: 10px 14px;
-            border-radius: 8px;
-            max-width: 80%;
-            line-height: 1.4;
-        }
-        .user-msg {
-            background: #0284c7;
-            color: white;
-            align-self: flex-end;
-        }
-        .ai-msg {
-            background: #334155;
-            color: #f1f5f9;
-            align-self: flex-start;
-        }
-        .input-group {
-            display: flex;
-            gap: 10px;
-        }
-        input[type="text"] {
-            flex: 1;
-            padding: 12px;
-            border-radius: 6px;
-            border: 1px solid #475569;
-            background: #0f172a;
-            color: white;
-            font-size: 1rem;
-        }
-        button {
-            padding: 12px 20px;
-            background-color: var(--accent);
-            color: #0f172a;
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        button:hover {
-            background-color: #7dd3fc;
-        }
-        .status {
-            text-align: center;
-            margin-top: 15px;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-        }
+        body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 700px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        h1 { color: #38bdf8; text-align: center; font-size: 1.5rem; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #94a3b8; margin-bottom: 20px; font-size: 0.9rem; }
+        .chat-box { background: #090d16; border: 1px solid #334155; height: 320px; overflow-y: auto; padding: 12px; margin-bottom: 15px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+        .message { padding: 8px 12px; border-radius: 6px; max-width: 85%; line-height: 1.4; }
+        .user-msg { background: #0284c7; color: white; align-self: flex-end; }
+        .ai-msg { background: #334155; color: #f1f5f9; align-self: flex-start; }
+        .input-group { display: flex; gap: 8px; }
+        input[type="text"] { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; }
+        button { padding: 10px 18px; background-color: #38bdf8; color: #0f172a; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        button:hover { background-color: #7dd3fc; }
     </style>
 </head>
 <body>
-
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Interfaz Estratégica Multidisciplinaria</div>
+        <div class="subtitle">Prof. David Villarreal — 7 Pilares Activos</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. El núcleo se encuentra operativo. ¿En qué área estratégica trabajaremos hoy?</div>
+            <div class="message ai-msg">Hola, profesor David. Los 7 módulos del núcleo se encuentran activos y operativos. ¿En qué área trabajaremos hoy?</div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="userInput" placeholder="Escriba su consulta o instrucción..." autofocus>
+            <input type="text" id="userInput" placeholder="Escriba su consulta o indique el área..." autofocus>
             <button onclick="enviarMensaje()">Enviar</button>
         </div>
-        
-        <div class="status">Sistema Activo | Motor Fonético en Español (es-ES) Configurado</div>
     </div>
 
     <script>
-        // Carga previa de voces del navegador para asegurar compatibilidad de síntesis en español
-        let synthVoices = [];
-        function cargarVoces() {
-            synthVoices = window.speechSynthesis.getVoices();
-        }
-        cargarVoces();
-        if (window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = cargarVoces;
-        }
+        let vocesDisponibles = [];
+        window.speechSynthesis.onvoiceschanged = () => {
+            vocesDisponibles = window.speechSynthesis.getVoices();
+        };
 
-        function hablarTexto(texto) {
+        function hablar(texto) {
             if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
             
-            window.speechSynthesis.cancel(); // Detiene cualquier audio previo
             const utterance = new SpeechSynthesisUtterance(texto);
-            
-            // Configuración estricta para español y acentos correctos
-            utterance.lang = 'es-ES';
+            utterance.lang = 'es-ES'; // Forzar idioma español y correcta acentuación
             utterance.rate = 1.0;
-            utterance.pitch = 1.0;
 
-            // Busca una voz nativa en español disponible en el sistema del usuario
-            const voiceEs = synthVoices.find(v => v.lang.startsWith('es') || v.lang.includes('ES'));
-            if (voiceEs) {
-                utterance.voice = voiceEs;
+            const vozEspanol = vocesDisponibles.find(v => v.lang.startsWith('es'));
+            if (vozEspanol) {
+                utterance.voice = vozEspanol;
             }
 
             window.speechSynthesis.speak(utterance);
@@ -179,10 +81,8 @@ HTML_TEMPLATE = """
             const input = document.getElementById('userInput');
             const chatBox = document.getElementById('chatBox');
             const texto = input.value.trim();
-
             if (!texto) return;
 
-            // Mostrar mensaje del usuario
             chatBox.innerHTML += `<div class="message user-msg">${texto}</div>`;
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -193,25 +93,17 @@ HTML_TEMPLATE = """
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: texto })
                 });
-
                 const data = await response.json();
-                
-                // Mostrar respuesta de la IA
                 chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
-
-                // Ejecutar síntesis de voz corregida en español
-                hablarTexto(data.reply);
-
+                hablar(data.reply);
             } catch (error) {
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de conexión con el núcleo.</div>`;
             }
         }
 
         document.getElementById('userInput').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                enviarMensaje();
-            }
+            if (e.key === 'Enter') enviarMensaje();
         });
     </script>
 </body>
@@ -225,17 +117,32 @@ def index():
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data = request.get_json() or {}
-    user_message = data.get("message", "").lower()
+    msg = data.get("message", "").lower()
     
-    # Procesamiento inteligente básico basado en los pilares del profesor
-    respuesta = f"Profesor David, he procesado su directiva: '{user_message}'. El sistema opera con normalidad y los parámetros académicos y fonéticos se encuentran listos."
-    
-    if "abogado" in user_message or "derecho" in user_message:
-        respuesta = "Módulo Jurídico Activo: Analizando bajo normativas de rigor, jurisprudencia y directrices APA solicitadas."
-    elif "ingles" in user_message or "english" in user_message:
-        respuesta = "Módulo Docente de Inglés Activo: Preparado para estructurar material interactivo de alta retención."
-    elif "ifa" in user_message or "yoruba" in user_message or "religión" in user_message:
-        respuesta = "Módulo Tradicional Activo: Resguardando los principios y fundamentos de Ifá tradicional yoruba y Batuque Isesa."
+    # Enrutamiento inteligente para los 7 pilares profesionales
+    if any(k in msg for k in ["secretario", "correo", "workspace", "agenda"]):
+        p = PILARES_THIAGO["1"]
+        respuesta = f"Módulo 1 ({p[0].capitalize()}) Activo: {p[1]}. Preparado para coordinar su gestión administrativa."
+    elif any(k in msg for k in ["abogado", "derecho", "jurisprudencia", "fallos", "apa"]):
+        p = PILARES_THIAGO["2"]
+        respuesta = f"Módulo 2 ({p[0].capitalize()}) Activo: {p[1]}. Analizando bajo estrictas normas bibliográficas y jurisprudenciales."
+    elif any(k in msg for k in ["masoneria", "masones", "logia", "estrategica"]):
+        p = PILARES_THIAGO["3"]
+        respuesta = f"Módulo 3 ({p[0].capitalize()}) Activo: {p[1]}. Abordando los principios y la organización estratégica."
+    elif any(k in msg for k in ["ifa", "yoruba", "batuque", "isesa", "religion"]):
+        p = PILARES_THIAGO["4"]
+        respuesta = f"Módulo 4 ({p[0].capitalize()}) Activo: {p[1]}. Resguardando con rigor la tradición y los fundamentos."
+    elif any(k in msg for k in ["investigacion", "relaciones internacionales", "doctorado", "tesis"]):
+        p = PILARES_THIAGO["5"]
+        respuesta = f"Módulo 5 ({p[0].capitalize()}) Activo: {p[1]}. Asistiendo en el desarrollo académico de su doctorado."
+    elif any(k in msg for k in ["ingles", "english", "docencia ingles", "didactico"]):
+        p = PILARES_THIAGO["6"]
+        respuesta = f"Módulo 6 ({p[0]}) Activo: {p[1]}. Listo para estructurar material didáctico interactivo de alta retención."
+    elif any(k in msg for k in ["docencia derecho", "pedagogia", "clases derecho"]):
+        p = PILARES_THIAGO["7"]
+        respuesta = f"Módulo 7 ({p[0]}) Activo: {p[1]}. Organizando contenidos jurídicos especializados para la enseñanza."
+    else:
+        respuesta = f"Profesor David, he procesado su instrucción: '{msg}'. Los 7 pilares se encuentran activos y a su disposición."
 
     return jsonify({"reply": respuesta})
 
