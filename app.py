@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Interfaz Web con los 7 Pilares Activos y Corrección Fonética.
+Núcleo Central de Thiago - Interfaz Web con Síntesis y Reconocimiento de Voz (Escucha y Habla).
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -24,7 +24,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo de Thiago - Interfaz Web</title>
+    <title>Núcleo de Thiago - Interfaz Web Interactiva</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 700px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -38,19 +38,23 @@ HTML_TEMPLATE = """
         input[type="text"] { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; }
         button { padding: 10px 18px; background-color: #38bdf8; color: #0f172a; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         button:hover { background-color: #7dd3fc; }
+        .mic-btn { background-color: #ef4444; color: white; }
+        .mic-btn.listening { background-color: #22c55e; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — 7 Pilares Activos</div>
+        <div class="subtitle">Prof. David Villarreal — Módulo de Voz Activo (Habla y Escucha)</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. Los 7 módulos del núcleo se encuentran activos y operativos. ¿En qué área trabajaremos hoy?</div>
+            <div class="message ai-msg">Hola, profesor David. El sistema escucha y habla en español. Haga clic en el micrófono para dictar su consulta.</div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="userInput" placeholder="Escriba su consulta o indique el área..." autofocus>
+            <input type="text" id="userInput" placeholder="Escriba o use el micrófono..." autofocus>
+            <button type="button" id="micBtn" class="mic-btn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤 Hablar</button>
             <button onclick="enviarMensaje()">Enviar</button>
         </div>
     </div>
@@ -66,7 +70,7 @@ HTML_TEMPLATE = """
             window.speechSynthesis.cancel();
             
             const utterance = new SpeechSynthesisUtterance(texto);
-            utterance.lang = 'es-ES'; // Forzar idioma español y correcta acentuación
+            utterance.lang = 'es-ES';
             utterance.rate = 1.0;
 
             const vozEspanol = vocesDisponibles.find(v => v.lang.startsWith('es'));
@@ -75,6 +79,61 @@ HTML_TEMPLATE = """
             }
 
             window.speechSynthesis.speak(utterance);
+        }
+
+        // Configuración de Reconocimiento de Voz (Escucha)
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        let escuchando = false;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'es-ES';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                escuchando = true;
+                const btn = document.getElementById('micBtn');
+                btn.classList.add('listening');
+                btn.textContent = '🔴 Escuchando...';
+            };
+
+            recognition.onresult = (event) => {
+                const textoTranscrito = event.results[0][0].transcript;
+                document.getElementById('userInput').value = textoTranscrito;
+                enviarMensaje(); // Envía automáticamente al terminar de hablar
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Error de reconocimiento de voz:", event.error);
+                detenerEscucha();
+            };
+
+            recognition.onend = () => {
+                detenerEscucha();
+            };
+        } else {
+            document.getElementById('micBtn').style.display = 'none'; // Ocultar si el navegador no soporta
+        }
+
+        function alternarEscucha() {
+            if (!recognition) {
+                alert("Su navegador no soporta reconocimiento de voz nativo. Utilice Google Chrome.");
+                return;
+            }
+            if (escuchando) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        }
+
+        function detenerEscucha() {
+            escuchando = false;
+            const btn = document.getElementById('micBtn');
+            btn.classList.remove('listening');
+            btn.textContent = '🎤 Hablar';
         }
 
         async function enviarMensaje() {
@@ -119,7 +178,6 @@ def chat():
     data = request.get_json() or {}
     msg = data.get("message", "").lower()
     
-    # Enrutamiento inteligente para los 7 pilares profesionales
     if any(k in msg for k in ["secretario", "correo", "workspace", "agenda"]):
         p = PILARES_THIAGO["1"]
         respuesta = f"Módulo 1 ({p[0].capitalize()}) Activo: {p[1]}. Preparado para coordinar su gestión administrativa."
@@ -142,7 +200,7 @@ def chat():
         p = PILARES_THIAGO["7"]
         respuesta = f"Módulo 7 ({p[0]}) Activo: {p[1]}. Organizando contenidos jurídicos especializados para la enseñanza."
     else:
-        respuesta = f"Profesor David, he procesado su instrucción: '{msg}'. Los 7 pilares se encuentran activos y a su disposición."
+        respuesta = f"Profesor David, he procesado su instrucción por voz: '{msg}'. Los 7 pilares se encuentran activos y a su disposición."
 
     return jsonify({"reply": respuesta})
 
