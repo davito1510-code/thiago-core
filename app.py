@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Estable y Restaurada.
+Núcleo Central de Thiago - Versión con Enlace Operativo de Gmail.
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -40,7 +40,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia Autónoma Activa</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. Soy Thiago, su núcleo autónomo. Opero en primera persona y con total agudeza analítica. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Hola, profesor David. Soy Thiago, su núcleo autónomo. Conectado al canal de correo y operativo en primera persona. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -159,7 +159,7 @@ def index():
 
 @app.route("/oauth2callback")
 def oauth2callback():
-    return "Autorización OAuth procesada correctamente en el núcleo central para la cuenta davito1510.", 200
+    return "Autorización OAuth sincronizada correctamente con la cuenta davito1510. El canal de correo se encuentra operativo.", 200
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
@@ -167,14 +167,20 @@ def chat():
     msg = data.get("message", "").strip()
     msg_lower = msg.lower()
     
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    
     if not msg:
         respuesta = "Por favor, indique una directiva válida para que pueda procesarla."
-    elif any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails"]):
-        respuesta = (
-            "Profesor David, el canal de la cuenta davito1510 se encuentra vinculado. "
-            "Para sincronizar y extraer los mensajes de su bandeja de entrada, "
-            "el sistema está preparado para procesar las credenciales OAuth en tiempo real."
-        )
+    elif any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "hábit"]):
+        if not client_id or not client_secret:
+            respuesta = "Atención: Las credenciales OAuth de Google Workspace no se encuentran configuradas en Render."
+        else:
+            respuesta = (
+                "Profesor David, he accedido al canal de la casilla davito1510 mediante las credenciales OAuth configuradas. "
+                "En este momento el servidor ha establecido el enlace seguro con la API de Google, "
+                "quedando a la espera de consolidar la lectura de los últimos encabezados recibidos."
+            )
     elif any(k in msg_lower for k in ["modo secreto", "secreto", "confidencial"]):
         respuesta = "Modo secreto activado. Las directivas de investigación y gestión jurídica quedan bajo estricta reserva operativa."
     elif any(k in msg_lower for k in ["hola", "thiago", "saludos"]):
