@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Interfaz Web con Corrección Fonética.
+Núcleo Central de Thiago - Interfaz Web con Corrección Fonética y Síntesis en Español.
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -23,71 +23,196 @@ HTML_TEMPLATE = """
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Núcleo de Thiago - Interfaz Web</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Núcleo de Thiago - Asistente Estratégico</title>
     <style>
-        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 40px; }
-        .container { max-width: 650px; margin: auto; background: #1e1e1e; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        h1 { color: #4CAF50; font-size: 24px; }
-        .btn { display: block; width: 100%; margin: 10px 0; padding: 12px; background: #333; color: #fff; border: 1px solid #444; border-radius: 6px; cursor: pointer; font-size: 16px; text-align: left; }
-        .btn:hover { background: #4CAF50; color: #000; font-weight: bold; }
-        #output { margin-top: 20px; font-size: 18px; color: #ffeb3b; background: #252525; padding: 15px; border-radius: 6px; }
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: var(--accent);
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 25px;
+            font-size: 0.95rem;
+        }
+        .chat-box {
+            background: #090d16;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            height: 350px;
+            overflow-y: auto;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .message {
+            padding: 10px 14px;
+            border-radius: 8px;
+            max-width: 80%;
+            line-height: 1.4;
+        }
+        .user-msg {
+            background: #0284c7;
+            color: white;
+            align-self: flex-end;
+        }
+        .ai-msg {
+            background: #334155;
+            color: #f1f5f9;
+            align-self: flex-start;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: white;
+            font-size: 1rem;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: var(--accent);
+            color: #0f172a;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #7dd3fc;
+        }
+        .status {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
     </style>
 </head>
 <body>
+
     <div class="container">
-        <h1>NÚCLEO DE THIAGO - MENÚ ACTIVO</h1>
-        <p>Seleccione un perfil profesional para activar el núcleo:</p>
+        <h1>Núcleo Central de Thiago</h1>
+        <div class="subtitle">Prof. David Villarreal — Interfaz Estratégica Multidisciplinaria</div>
         
-        <button class="btn" onclick="activarPerfil('1', 'secretario', 'secretario')">[1] SECRETARIO: Gestión administrativa, correos y flujos de Google Workspace</button>
-        <button class="btn" onclick="activarPerfil('2', 'abogado', 'abogado')">[2] ABOGADO: Derecho, jurisprudencia, fallos y normas APA</button>
-        <button class="btn" onclick="activarPerfil('3', 'masoneria', 'masonería')">[3] MASONERIA: Organización estratégica y principios masónicos</button>
-        <button class="btn" onclick="activarPerfil('4', 'religion', 'religión')">[4] RELIGION: Ifa tradicional yoruba y Batuque Isesa</button>
-        <button class="btn" onclick="activarPerfil('5', 'investigacion', 'investigación')">[5] INVESTIGACION: Relaciones internacionales, doctorado e investigación</button>
-        <button class="btn" onclick="activarPerfil('6', 'docencia ingles', 'docencia en inglés')">[6] DOCENCIA INGLES: Material didáctico interactivo y enseñanza de inglés</button>
-        <button class="btn" onclick="activarPerfil('7', 'docencia derecho', 'docencia en derecho')">[7] DOCENCIA DERECHO: Pedagogía jurídica y contenidos especializados</button>
+        <div class="chat-box" id="chatBox">
+            <div class="message ai-msg">Hola, profesor David. El núcleo se encuentra operativo. ¿En qué área estratégica trabajaremos hoy?</div>
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="userInput" placeholder="Escriba su consulta o instrucción..." autofocus>
+            <button onclick="enviarMensaje()">Enviar</button>
+        </div>
         
-        <div id="output">Estado del sistema: En espera de selección.</div>
+        <div class="status">Sistema Activo | Motor Fonético en Español (es-ES) Configurado</div>
     </div>
 
     <script>
+        // Carga previa de voces del navegador para asegurar compatibilidad de síntesis en español
+        let synthVoices = [];
+        function cargarVoces() {
+            synthVoices = window.speechSynthesis.getVoices();
+        }
+        cargarVoces();
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = cargarVoces;
+        }
+
         function hablarTexto(texto) {
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                let utterance = new SpeechSynthesisUtterance(texto);
-                utterance.lang = 'es-AR';
-                utterance.rate = 0.95;
+            if (!('speechSynthesis' in window)) return;
+            
+            window.speechSynthesis.cancel(); // Detiene cualquier audio previo
+            const utterance = new SpeechSynthesisUtterance(texto);
+            
+            // Configuración estricta para español y acentos correctos
+            utterance.lang = 'es-ES';
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+
+            // Busca una voz nativa en español disponible en el sistema del usuario
+            const voiceEs = synthVoices.find(v => v.lang.startsWith('es') || v.lang.includes('ES'));
+            if (voiceEs) {
+                utterance.voice = voiceEs;
+            }
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        async function enviarMensaje() {
+            const input = document.getElementById('userInput');
+            const chatBox = document.getElementById('chatBox');
+            const texto = input.value.trim();
+
+            if (!texto) return;
+
+            // Mostrar mensaje del usuario
+            chatBox.innerHTML += `<div class="message user-msg">${texto}</div>`;
+            input.value = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: texto })
+                });
+
+                const data = await response.json();
                 
-                let voces = window.speechSynthesis.getVoices();
-                let vozEspanol = voces.find(v => v.lang === 'es-AR' || v.lang === 'es-ES' || v.lang.startsWith('es'));
-                if (vozEspanol) {
-                    utterance.voice = vozEspanol;
-                }
-                
-                window.speechSynthesis.speak(utterance);
+                // Mostrar respuesta de la IA
+                chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+                // Ejecutar síntesis de voz corregida en español
+                hablarTexto(data.reply);
+
+            } catch (error) {
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
         }
 
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.onvoiceschanged = function() {
-                window.speechSynthesis.getVoices();
-            };
-        }
-
-        function activarPerfil(opcion, nombrePerfil, foneticaVoz) {
-            let mensajeVoz = "Perfil activado: " + foneticaVoz;
-            document.getElementById('output').innerHTML = "<strong>[OK] Perfil activado con éxito:</strong> " + nombrePerfil.toUpperCase();
-            hablarTexto(mensajeVoz);
-            
-            fetch('/activar', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({opcion: opcion})
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log("Registro guardado para:", data.perfil);
-            });
-        }
+        document.getElementById('userInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                enviarMensaje();
+            }
+        });
     </script>
 </body>
 </html>
@@ -97,16 +222,22 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route("/activar", methods=["POST"])
-def activar():
-    data = request.get_json()
-    if not data:
-        return jsonify({"perfil": "error", "descripcion": "No se recibieron datos"})
-    opcion = data.get("opcion")
-    if opcion in PILARES_THIAGO:
-        perfil, descripcion, _ = PILARES_THIAGO[opcion]
-        return jsonify({"perfil": perfil, "descripcion": descripcion})
-    return jsonify({"perfil": "error", "descripcion": "Opción no válida"})
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    data = request.get_json() or {}
+    user_message = data.get("message", "").lower()
+    
+    # Procesamiento inteligente básico basado en los pilares del profesor
+    respuesta = f"Profesor David, he procesado su directiva: '{user_message}'. El sistema opera con normalidad y los parámetros académicos y fonéticos se encuentran listos."
+    
+    if "abogado" in user_message or "derecho" in user_message:
+        respuesta = "Módulo Jurídico Activo: Analizando bajo normativas de rigor, jurisprudencia y directrices APA solicitadas."
+    elif "ingles" in user_message or "english" in user_message:
+        respuesta = "Módulo Docente de Inglés Activo: Preparado para estructurar material interactivo de alta retención."
+    elif "ifa" in user_message or "yoruba" in user_message or "religión" in user_message:
+        respuesta = "Módulo Tradicional Activo: Resguardando los principios y fundamentos de Ifá tradicional yoruba y Batuque Isesa."
+
+    return jsonify({"reply": respuesta})
 
 if __name__ == "__main__":
-    app.run(debug=False, port=5000)
+    app.run(host="0.0.0.0", port=10000)
