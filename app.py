@@ -156,7 +156,6 @@ HTML_TEMPLATE = """
 """
 
 def obtener_servicio_gmail():
-    # Carga las credenciales de forma directa y robusta desde las variables de entorno de Render
     creds = Credentials(
         token=None,
         refresh_token=os.environ.get("GOOGLE_REFRESH_TOKEN"),
