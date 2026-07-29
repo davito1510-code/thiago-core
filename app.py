@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión con Enlace Operativo de Gmail.
+Núcleo Central de Thiago - Versión Operativa Integrada con Gmail.
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -24,7 +24,7 @@ HTML_TEMPLATE = """
         h1 { color: #38bdf8; text-align: center; font-size: 1.5rem; margin-bottom: 5px; }
         .subtitle { text-align: center; color: #94a3b8; margin-bottom: 20px; font-size: 0.9rem; }
         .chat-box { background: #090d16; border: 1px solid #334155; height: 340px; overflow-y: auto; padding: 12px; margin-bottom: 15px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
-        .message { padding: 9px 13px; border-radius: 6px; max-width: 85%; line-height: 1.4; word-break: break-word; }
+        .message { padding: 9px 13px; border-radius: 6px; max-width: 85%; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
         .user-msg { background: #0284c7; color: white; align-self: flex-end; }
         .ai-msg { background: #334155; color: #f1f5f9; align-self: flex-start; }
         .input-group { display: flex; gap: 8px; }
@@ -42,7 +42,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia Autónoma Activa</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. Canal de correo enlazado. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Hola, profesor David. Núcleo operativo y enlazado. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -178,9 +178,9 @@ def chat():
     
     if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "davito"]):
         if not client_id or not client_secret:
-            return jsonify({"reply": "Error crítico: Faltan las credenciales GOOGLE_CLIENT_ID o GOOGLE_CLIENT_SECRET en el entorno de Render."})
+            return jsonify({"reply": "Error crítico: Faltan las credenciales GOOGLE_CLIENT_ID o GOOGLE_CLIENT_SECRET en Render."})
         if not refresh_token:
-            return jsonify({"reply": "Falta el token de actualización (GOOGLE_REFRESH_TOKEN) en Render. Sin este permiso de sesión otorgado por Google, la API rechaza la lectura de la bandeja de entrada."})
+            return jsonify({"reply": "Falta configurar la variable GOOGLE_REFRESH_TOKEN en Render para permitir el acceso a la bandeja."})
         
         try:
             creds = Credentials(
@@ -195,7 +195,7 @@ def chat():
             messages = results.get('messages', [])
             
             if not messages:
-                return jsonify({"reply": "La bandeja de entrada está sincronizada, pero no se encontraron mensajes recientes."})
+                return jsonify({"reply": "Bandeja sincronizada: No se encontraron mensajes recientes."})
             
             lista_mails = []
             for m in messages:
@@ -203,13 +203,13 @@ def chat():
                 headers = msg_data.get('payload', {}).get('headers', [])
                 asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
                 remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
-                lista_mails.append(f"• De: {remitente} | Asunto: {asunto}")
+                lista_mails.append(f"• De: {remitente}\n  Asunto: {asunto}")
             
-            return jsonify({"reply": "Últimos correos detectados en su bandeja:\n" + "\n".join(lista_mails)})
+            return jsonify({"reply": "Últimos correos detectados:\n\n" + "\n\n".join(lista_mails)})
         except Exception as e:
-            return jsonify({"reply": f"Error al conectar con la API de Gmail: {str(e)}"})
+            return jsonify({"reply": f"Error en la conexión con la API de Gmail: {str(e)}"})
     elif any(k in msg_lower for k in ["hola", "thiago", "saludos"]):
-        return jsonify({"reply": "Hola, profesor David. Canal operativo y listo para procesar requerimientos."})
+        return jsonify({"reply": "Hola, profesor David. A su disposición."})
     else:
         return jsonify({"reply": f"Instrucción procesada: {msg}"})
 
