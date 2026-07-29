@@ -55,7 +55,7 @@ HTML_TEMPLATE = """
                 window.speechSynthesis.cancel();
                 let utterance = new SpeechSynthesisUtterance(texto);
                 utterance.lang = 'es-AR';
-                utterance.rate = 0.95; // Velocidad ligeramente pausada para claridad absoluta
+                utterance.rate = 0.95;
                 
                 let voces = window.speechSynthesis.getVoices();
                 let vozEspanol = voces.find(v => v.lang === 'es-AR' || v.lang === 'es-ES' || v.lang.startsWith('es'));
@@ -100,6 +100,8 @@ def index():
 @app.route("/activar", methods=["POST"])
 def activar():
     data = request.get_json()
+    if not data:
+        return jsonify({"perfil": "error", "descripcion": "No se recibieron datos"})
     opcion = data.get("opcion")
     if opcion in PILARES_THIAGO:
         perfil, descripcion, _ = PILARES_THIAGO[opcion]
@@ -107,5 +109,4 @@ def activar():
     return jsonify({"perfil": "error", "descripcion": "Opción no válida"})
 
 if __name__ == "__main__":
-    print("\n[Servidor Web de Thiago con corrección fonética listo]")
     app.run(debug=False, port=5000)
