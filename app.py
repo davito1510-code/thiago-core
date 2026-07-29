@@ -12,7 +12,6 @@ from googleapiclient.discovery import build
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "clave-segura-thiago")
 
-# Configuración para permitir HTTP en desarrollo/Render (obligatorio para OAuth fuera de localhost si usa proxy)
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 HTML_TEMPLATE = """
@@ -37,7 +36,7 @@ HTML_TEMPLATE = """
         button:hover { background-color: #7dd3fc; }
         .mic-btn { background-color: #ef4444; color: white; }
         .mic-btn.listening { background-color: #22c55e; animation: pulse 1.5s infinite; }
-        .auth-link { color: #38bdf8; text-decoration: underline; cursor: pointer; }
+        .auth-link { color: #38bdf8; text-decoration: underline; font-weight: bold; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
@@ -134,7 +133,7 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.auth_url) {
-                    chatBox.innerHTML += `<div class="message ai-msg">Para leer sus correos, primero debe autorizar el acceso único haciendo clic aquí: <a href="${data.auth_url}" target="_blank" class="auth-link">Autorizar Gmail</a></div>`;
+                    chatBox.innerHTML += `<div class="message ai-msg">Para acceder a sus correos, haga clic en el siguiente enlace de autorización segura: <br><br><a href="${data.auth_url}" target="_blank" class="auth-link">🔗 Autorizar Acceso a Gmail</a></div>`;
                 } else {
                     chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                     hablar(data.reply);
@@ -169,7 +168,7 @@ def obtener_cliente_oauth():
     return Flow.from_client_config(
         client_config,
         scopes=['https://www.googleapis.com/auth/gmail.readonly'],
-        redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI", "https://thiago-core.onrender.com/oauth2callback")
+        redirect_uri="https://thiago-core.onrender.com/oauth2callback"
     )
 
 @app.route("/")
@@ -206,7 +205,7 @@ def chat():
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
-    if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "davito"]):
+    if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "davito", "gabito"]):
         creds_data = session.get('credentials')
         
         if not creds_data:
@@ -241,7 +240,6 @@ def chat():
             
             return jsonify({"reply": "Últimos correos detectados:\n\n" + "\n\n".join(lista_mails)})
         except Exception as e:
-            # Si el token guardado en sesión falló, limpiamos la sesión para pedir autorización de nuevo
             session.pop('credentials', None)
             try:
                 flow = obtener_cliente_oauth()
