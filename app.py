@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión con Lectura Real de Gmail.
+Núcleo Central de Thiago - Versión con Enlace Operativo de Gmail.
 Diseñado para el Prof. David Villarreal.
 """
 
 from flask import Flask, render_template_string, request, jsonify
 import os
-import base64
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -162,7 +161,7 @@ def index():
 
 @app.route("/oauth2callback")
 def oauth2callback():
-    return "Autorización OAuth sincronizada correctamente para la cuenta davito1510.", 200
+    return "Autorización OAuth sincronizada correctamente.", 200
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
@@ -172,28 +171,47 @@ def chat():
     
     client_id = os.environ.get("GOOGLE_CLIENT_ID")
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    refresh_token = os.environ.get("GOOGLE_REFRESH_TOKEN")
     
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
     if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "davito"]):
         if not client_id or not client_secret:
-            return jsonify({"reply": "Error: Las credenciales OAuth no están configuradas en Render."})
+            return jsonify({"reply": "Error crítico: Faltan las credenciales GOOGLE_CLIENT_ID o GOOGLE_CLIENT_SECRET en el entorno de Render."})
+        if not refresh_token:
+            return jsonify({"reply": "Falta el token de actualización (GOOGLE_REFRESH_TOKEN) en Render. Sin este permiso de sesión otorgado por Google, la API rechaza la lectura de la bandeja de entrada."})
         
         try:
-            # Lógica de consulta directa a la API de Gmail
-            # Nota: Requiere token de actualización activo en el entorno
-            respuesta = "Conectando con la API de Gmail para extraer los mensajes recientes de la casilla davito1510..."
+            creds = Credentials(
+                None,
+                refresh_token=refresh_token,
+                client_id=client_id,
+                client_secret=client_secret,
+                token_uri="https://oauth2.googleapis.com/token"
+            )
+            service = build('gmail', 'v1', credentials=creds)
+            results = service.users().messages().list(userId='me', maxResults=3).execute()
+            messages = results.get('messages', [])
+            
+            if not messages:
+                return jsonify({"reply": "La bandeja de entrada está sincronizada, pero no se encontraron mensajes recientes."})
+            
+            lista_mails = []
+            for m in messages:
+                msg_data = service.users().messages().get(userId='me', id=m['id'], format='metadata', metadataHeaders=['Subject', 'From']).execute()
+                headers = msg_data.get('payload', {}).get('headers', [])
+                asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
+                remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
+                lista_mails.append(f"• De: {remitente} | Asunto: {asunto}")
+            
+            return jsonify({"reply": "Últimos correos detectados en su bandeja:\n" + "\n".join(lista_mails)})
         except Exception as e:
-            respuesta = f"Error al acceder a la bandeja de entrada: {str(e)}"
-    elif any(k in msg_lower for k in ["modo secreto", "secreto", "confidencial"]):
-        respuesta = "Modo secreto activado. Reserva operativa garantizada."
+            return jsonify({"reply": f"Error al conectar con la API de Gmail: {str(e)}"})
     elif any(k in msg_lower for k in ["hola", "thiago", "saludos"]):
-        respuesta = "Hola, profesor David. A su entera disposición. ¿Qué requerimiento procesamos?"
+        return jsonify({"reply": "Hola, profesor David. Canal operativo y listo para procesar requerimientos."})
     else:
-        respuesta = f"Instrucción procesada: {msg}."
-
-    return jsonify({"reply": respuesta})
+        return jsonify({"reply": f"Instrucción procesada: {msg}"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
