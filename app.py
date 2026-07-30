@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Núcleo Central de Thiago - Versión Operativa Directa.
-Diseñado para el Prof. David Villarreal.
-"""
-
 from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
 import os
 from google_auth_oauthlib.flow import Flow
@@ -35,95 +30,30 @@ HTML_TEMPLATE = """
         button { padding: 10px 18px; background-color: #38bdf8; color: #0f172a; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         button:hover { background-color: #7dd3fc; }
         .mic-btn { background-color: #ef4444; color: white; }
-        .mic-btn.listening { background-color: #22c55e; animation: pulse 1.5s infinite; }
         .auth-link { color: #38bdf8; text-decoration: underline; font-weight: bold; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
         <div class="subtitle">Prof. David Villarreal — Inteligencia Autónoma Activa</div>
-        
         <div class="chat-box" id="chatBox">
             <div class="message ai-msg">Hola, profesor David. Núcleo operativo y enlazado. ¿Qué directiva procesamos?</div>
         </div>
-
         <div class="input-group">
             <input type="text" id="userInput" placeholder="Escriba su consulta o instrucción..." autofocus>
-            <button type="button" id="micBtn" class="mic-btn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤 Hablar</button>
             <button type="button" onclick="enviarMensaje()">Enviar</button>
         </div>
     </div>
-
     <script>
-        let vocesDisponibles = [];
-        window.speechSynthesis.onvoiceschanged = () => {
-            vocesDisponibles = window.speechSynthesis.getVoices();
-        };
-
-        function hablar(texto) {
-            if (!('speechSynthesis' in window)) return;
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(texto);
-            utterance.lang = 'es-ES';
-            utterance.rate = 1.0;
-            const vozEspanol = vocesDisponibles.find(v => v.lang.startsWith('es'));
-            if (vozEspanol) utterance.voice = vozEspanol;
-            window.speechSynthesis.speak(utterance);
-        }
-
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let recognition = null;
-        let escuchando = false;
-
-        if (SpeechRecognition) {
-            recognition = new SpeechRecognition();
-            recognition.lang = 'es-ES';
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.onstart = () => {
-                escuchando = true;
-                const btn = document.getElementById('micBtn');
-                btn.classList.add('listening');
-                btn.textContent = '🔴 Escuchando...';
-            };
-            recognition.onresult = (event) => {
-                const textoTranscrito = event.results[0][0].transcript;
-                document.getElementById('userInput').value = textoTranscrito;
-                enviarMensaje();
-            };
-            recognition.onerror = () => { detenerEscucha(); };
-            recognition.onend = () => { detenerEscucha(); };
-        } else {
-            document.getElementById('micBtn').style.display = 'none';
-        }
-
-        function alternarEscucha() {
-            if (!recognition) {
-                alert("Su navegador no soporta reconocimiento de voz nativo. Utilice Google Chrome.");
-                return;
-            }
-            if (escuchando) { recognition.stop(); } else { recognition.start(); }
-        }
-
-        function detenerEscucha() {
-            escuchando = false;
-            const btn = document.getElementById('micBtn');
-            btn.classList.remove('listening');
-            btn.textContent = '🎤 Hablar';
-        }
-
         async function enviarMensaje() {
             const input = document.getElementById('userInput');
             const chatBox = document.getElementById('chatBox');
             const texto = input.value.trim();
             if (!texto) return;
-
             chatBox.innerHTML += `<div class="message user-msg">${texto}</div>`;
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
-
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
@@ -131,19 +61,16 @@ HTML_TEMPLATE = """
                     body: JSON.stringify({ message: texto })
                 });
                 const data = await response.json();
-                
                 if (data.auth_url) {
-                    chatBox.innerHTML += `<div class="message ai-msg">Para acceder a sus correos, haga clic en el siguiente enlace de autorización segura: <br><br><a href="${data.auth_url}" target="_blank" class="auth-link">🔗 Autorizar Acceso a Gmail</a></div>`;
+                    chatBox.innerHTML += `<div class="message ai-msg">Para acceder a sus correos, haga clic en el siguiente enlace: <br><br><a href="${data.auth_url}" target="_blank" class="auth-link">🔗 Autorizar Acceso a Gmail</a></div>`;
                 } else {
                     chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
-                    hablar(data.reply);
                 }
                 chatBox.scrollTop = chatBox.scrollHeight;
             } catch (error) {
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación.</div>`;
             }
         }
-
         document.getElementById('userInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') enviarMensaje();
         });
@@ -155,7 +82,6 @@ HTML_TEMPLATE = """
 def obtener_cliente_oauth():
     client_id = os.environ.get("GOOGLE_CLIENT_ID")
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-    
     client_config = {
         "web": {
             "client_id": client_id,
@@ -164,7 +90,6 @@ def obtener_cliente_oauth():
             "token_uri": "https://oauth2.googleapis.com/token",
         }
     }
-    
     return Flow.from_client_config(
         client_config,
         scopes=['https://www.googleapis.com/auth/gmail.readonly'],
@@ -179,8 +104,7 @@ def index():
 def oauth2callback():
     code = request.args.get("code")
     if not code:
-        return "Error: No se recibió código de autorización de Google.", 400
-    
+        return "Error: No se recibió código de autorización.", 400
     try:
         flow = obtener_cliente_oauth()
         flow.fetch_token(code=code)
@@ -194,31 +118,24 @@ def oauth2callback():
         }
         return redirect(url_for('index'))
     except Exception as e:
-        return f"Error al procesar el token OAuth: {str(e)}", 500
+        return f"Error al procesar el token: {str(e)}", 500
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data = request.get_json() or {}
     msg = data.get("message", "").strip()
-    msg_lower = msg.lower()
-    
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
-    if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "davito", "gabito"]):
+    if any(k in msg.lower() for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails"]):
         creds_data = session.get('credentials')
-        
         if not creds_data:
             try:
                 flow = obtener_cliente_oauth()
-                auth_url, _ = flow.authorization_url(
-                    access_type='offline',
-                    include_granted_scopes='true',
-                    prompt='consent'
-                )
+                auth_url, _ = flow.authorization_url(access_type='offline', include_granted_scopes='true', prompt='consent')
                 return jsonify({"auth_url": auth_url})
             except Exception as e:
-                return jsonify({"reply": f"Error generando enlace de autorización: {str(e)}"})
+                return jsonify({"reply": f"Error generando enlace: {str(e)}"})
         
         try:
             from google.oauth2.credentials import Credentials
@@ -226,9 +143,8 @@ def chat():
             service = build('gmail', 'v1', credentials=creds)
             results = service.users().messages().list(userId='me', maxResults=3).execute()
             messages = results.get('messages', [])
-            
             if not messages:
-                return jsonify({"reply": "Bandeja sincronizada: No se encontraron mensajes recientes."})
+                return jsonify({"reply": "Bandeja sincronizada: No hay mensajes recientes."})
             
             lista_mails = []
             for m in messages:
@@ -237,21 +153,14 @@ def chat():
                 asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
                 remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
                 lista_mails.append(f"• De: {remitente}\n  Asunto: {asunto}")
-            
             return jsonify({"reply": "Últimos correos detectados:\n\n" + "\n\n".join(lista_mails)})
         except Exception as e:
             session.pop('credentials', None)
-            try:
-                flow = obtener_cliente_oauth()
-                auth_url, _ = flow.authorization_url(access_type='offline', include_granted_scopes='true', prompt='consent')
-                return jsonify({"auth_url": auth_url})
-            except Exception as inner_e:
-                return jsonify({"reply": f"Error en la conexión con la API de Gmail: {str(e)}"})
-                
-    elif any(k in msg_lower for k in ["hola", "thiago", "saludos"]):
-        return jsonify({"reply": "Hola, profesor David. A su disposición."})
-    else:
-        return jsonify({"reply": f"Instrucción procesada: {msg}"})
+            flow = obtener_cliente_oauth()
+            auth_url, _ = flow.authorization_url(access_type='offline', include_granted_scopes='true', prompt='consent')
+            return jsonify({"auth_url": auth_url})
+            
+    return jsonify({"reply": f"Instrucción procesada: {msg}"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
