@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Autónoma Cloud con Voz y Diagnóstico de Variables.
+Núcleo Central de Thiago - Versión Autónoma Definitiva (Credenciales Embebidas).
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -140,19 +140,11 @@ HTML_TEMPLATE = """
 """
 
 def obtener_servicio_gmail():
-    refresh_token = os.environ.get("GMAIL_REFRESH_TOKEN")
-    client_id = os.environ.get("GOOGLE_CLIENT_ID")
-    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-    token_uri = os.environ.get("GMAIL_TOKEN_URI", "https://oauth2.googleapis.com/token")
-    
-    # Diagnóstico detallado de presencia de variables
-    faltantes = []
-    if not refresh_token: faltantes.append("GMAIL_REFRESH_TOKEN")
-    if not client_id: faltantes.append("GOOGLE_CLIENT_ID")
-    if not client_secret: faltantes.append("GOOGLE_CLIENT_SECRET")
-    
-    if faltantes:
-        raise ValueError(f"Las siguientes variables no están cargadas en Render: {', '.join(faltantes)}")
+    # Credenciales fijas incorporadas para evitar fallos de inyección en la nube
+    client_id = "377709097034-hj0bnbv02onkarp3vpq1vlidalfjfb5r.apps.googleusercontent.com"
+    client_secret = "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"
+    refresh_token = "1//0hNRrDJiz-K6NCgYIARAAGBESNWf-L9Ir5kRTiruuhVrzJvkKRwj9dQrGhMkNGQndoySA_agJpz6qipyBkEkiZl4DbwS9_pMazU"
+    token_uri = "https://oauth2.googleapis.com/token"
     
     creds = Credentials(
         token=None,
@@ -179,7 +171,7 @@ def chat():
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
-    if any(k in msg.lower() for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "ingresas"]):
+    if any(k in msg.lower() for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "ingresas", "traer"]):
         try:
             service = obtener_servicio_gmail()
             results = service.users().messages().list(userId='me', maxResults=3).execute()
@@ -198,7 +190,7 @@ def chat():
             respuesta_correo = "Últimos correos detectados:\n\n" + "\n".join(lista_mails)
             return jsonify({"reply": respuesta_correo})
         except Exception as e:
-            return jsonify({"reply": f"Error de acceso autónomo al servidor de correo: {str(e)}"})
+            return jsonify({"reply": f"Error en la autenticación de la API de Google: {str(e)}"})
             
     elif any(k in msg.lower() for k in ["hola", "thiago", "saludos"]):
         return jsonify({"reply": "Hola, profesor David. Núcleo en línea, escuchando y preparado."})
