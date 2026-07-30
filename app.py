@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Cognitiva Definitiva
+Núcleo Central de Thiago - Módulo Estable de Gmail
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -9,35 +9,8 @@ from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-import google.generativeai as genai
 
 app = Flask(__name__)
-
-# Configuración del motor cognitivo Gemini con su clave integrada
-GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-
-generation_config = {
-    "temperature": 0.3,
-    "top_p": 0.95,
-    "top_k": 40,
-    "max_output_tokens": 8192,
-}
-
-system_instruction = (
-    "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
-    "El profesor es abogado, Babalawo de Ifa tradicional yoruba, Batuque Isesa, profesor de inglés, "
-    "magíster y doctorando en relaciones internacionales, músico y masón. "
-    "Tus respuestas deben destacar por su rigor académico, precisión técnica, corrección gramatical absoluta "
-    "y un enfoque constructivo, claro y estructurado."
-)
-
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    generation_config=generation_config,
-    system_instruction=system_instruction
-)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -45,7 +18,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago - Cognitivo</title>
+    <title>Núcleo Central de Thiago - Gmail</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -66,10 +39,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Inteligencia Cognitiva Activa</div>
+        <div class="subtitle">Prof. David Villarreal — Módulo de Operación de Gmail</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. Núcleo cognitivo operativo y sincronizado. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Hola, profesor David. Núcleo autónomo operativo. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -153,7 +126,7 @@ HTML_TEMPLATE = """
                 chatBox.scrollTop = chatBox.scrollHeight;
                 hablarTexto(data.reply);
             } catch (error) {
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo cognitivo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
         }
 
@@ -189,7 +162,7 @@ def chat():
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
-    # 1. Automatización de Gmail
+    # Automatización y lectura de Gmail
     if any(k in msg.lower() for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "ingresas", "traer", "leer"]):
         try:
             service = obtener_servicio_gmail()
@@ -209,14 +182,8 @@ def chat():
             return jsonify({"reply": "Últimos correos detectados:\n\n" + "\n".join(lista_mails)})
         except Exception as e:
             return jsonify({"reply": f"Error de autorización en la cuenta de Google: {str(e)}"})
-            
-    # 2. Procesamiento Cognitivo Inteligente (Gemini)
     else:
-        try:
-            response = model.generate_content(msg)
-            return jsonify({"reply": response.text})
-        except Exception as e:
-            return jsonify({"reply": f"Error al procesar la consulta en el motor cognitivo: {str(e)}"})
+        return jsonify({"reply": f"Directiva procesada en modo local: {msg}. (Módulo de Gmail activo)."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
