@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Autónoma Cloud con Voz y Gmail.
+Núcleo Central de Thiago - Versión Autónoma Cloud con Voz y Diagnóstico de Variables.
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -57,7 +57,6 @@ HTML_TEMPLATE = """
         let recognition;
         let escuchando = false;
 
-        // Inicialización de Reconocimiento de Voz (Input)
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
@@ -72,13 +71,8 @@ HTML_TEMPLATE = """
                 enviarMensaje();
             };
 
-            recognition.onerror = function(event) {
-                detenerEscuchaVisual();
-            };
-
-            recognition.onend = function() {
-                detenerEscuchaVisual();
-            };
+            recognition.onerror = function() { detenerEscuchaVisual(); };
+            recognition.onend = function() { detenerEscuchaVisual(); };
         }
 
         function alternarEscucha() {
@@ -102,10 +96,9 @@ HTML_TEMPLATE = """
             escuchando = false;
         }
 
-        // Función de Síntesis de Voz (Output - Thiago Habla)
         function hablarTexto(texto) {
             if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel(); // Detiene cualquier audio previo
+                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(texto);
                 utterance.lang = 'es-AR';
                 utterance.rate = 1.0;
@@ -132,8 +125,6 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
-                
-                // Thiago responde en voz alta automáticamente
                 hablarTexto(data.reply);
             } catch (error) {
                 chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
@@ -154,8 +145,14 @@ def obtener_servicio_gmail():
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
     token_uri = os.environ.get("GMAIL_TOKEN_URI", "https://oauth2.googleapis.com/token")
     
-    if not refresh_token or not client_id or not client_secret:
-        raise ValueError("Faltan variables de entorno esenciales para autenticar Gmail en el servidor.")
+    # Diagnóstico detallado de presencia de variables
+    faltantes = []
+    if not refresh_token: faltantes.append("GMAIL_REFRESH_TOKEN")
+    if not client_id: faltantes.append("GOOGLE_CLIENT_ID")
+    if not client_secret: faltantes.append("GOOGLE_CLIENT_SECRET")
+    
+    if faltantes:
+        raise ValueError(f"Las siguientes variables no están cargadas en Render: {', '.join(faltantes)}")
     
     creds = Credentials(
         token=None,
@@ -182,7 +179,7 @@ def chat():
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
-    if any(k in msg.lower() for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "entrar"]):
+    if any(k in msg.lower() for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "ingresas"]):
         try:
             service = obtener_servicio_gmail()
             results = service.users().messages().list(userId='me', maxResults=3).execute()
