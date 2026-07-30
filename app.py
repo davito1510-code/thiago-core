@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""
+Núcleo Central de Thiago - Versión Segura con Variables de Entorno
+Diseñado para el Prof. David Villarreal.
+"""
+
+import os
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -11,40 +17,104 @@ HTML_TEMPLATE = """
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Núcleo Central de Thiago</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Núcleo Central de Thiago - Autónomo</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; }
-        h1 { color: #38bdf8; text-align: center; }
+        .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        h1 { color: #38bdf8; text-align: center; font-size: 1.5rem; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #94a3b8; margin-bottom: 20px; font-size: 0.9rem; }
         .chat-box { background: #090d16; border: 1px solid #334155; height: 340px; overflow-y: auto; padding: 12px; margin-bottom: 15px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
-        .message { padding: 9px 13px; border-radius: 6px; max-width: 85%; word-break: break-word; }
+        .message { padding: 9px 13px; border-radius: 6px; max-width: 85%; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
         .user-msg { background: #0284c7; color: white; align-self: flex-end; }
         .ai-msg { background: #334155; color: #f1f5f9; align-self: flex-start; }
         .input-group { display: flex; gap: 8px; }
-        input[type="text"] { flex: 1; padding: 10px; border-radius: 5px; background: #0f172a; color: white; border: 1px solid #475569; }
+        input[type="text"] { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; }
         button { padding: 10px 16px; background-color: #38bdf8; color: #0f172a; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        button:hover { background-color: #7dd3fc; }
+        #micBtn { background-color: #334155; color: #38bdf8; border: 1px solid #38bdf8; }
+        #micBtn.active { background-color: #ef4444; color: white; border-color: #ef4444; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
+        <div class="subtitle">Prof. David Villarreal — Inteligencia Autónoma Activa</div>
+        
         <div class="chat-box" id="chatBox">
             <div class="message ai-msg">Hola, profesor David. Núcleo autónomo operativo. ¿Qué directiva procesamos?</div>
         </div>
+
         <div class="input-group">
-            <input type="text" id="userInput" placeholder="Escriba su consulta..." autofocus>
+            <button type="button" id="micBtn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤</button>
+            <input type="text" id="userInput" placeholder="Escriba su consulta o hable con el micrófono..." autofocus>
             <button type="button" onclick="enviarMensaje()">Enviar</button>
         </div>
     </div>
+
     <script>
+        let recognition;
+        let escuchando = false;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'es-AR';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onresult = function(event) {
+                const textoTranscrito = event.results[0][0].transcript;
+                document.getElementById('userInput').value = textoTranscrito;
+                detenerEscuchaVisual();
+                enviarMensaje();
+            };
+
+            recognition.onerror = function() { detenerEscuchaVisual(); };
+            recognition.onend = function() { detenerEscuchaVisual(); };
+        }
+
+        function alternarEscucha() {
+            if (!recognition) {
+                alert("Su navegador no soporta reconocimiento de voz nativo.");
+                return;
+            }
+            if (escuchando) {
+                recognition.stop();
+            } else {
+                recognition.start();
+                document.getElementById('micBtn').classList.add('active');
+                document.getElementById('userInput').placeholder = "Escuchando...";
+                escuchando = true;
+            }
+        }
+
+        function detenerEscuchaVisual() {
+            document.getElementById('micBtn').classList.remove('active');
+            document.getElementById('userInput').placeholder = "Escriba su consulta o hable con el micrófono...";
+            escuchando = false;
+        }
+
+        function hablarTexto(texto) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(texto);
+                utterance.lang = 'es-AR';
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
         async function enviarMensaje() {
             const input = document.getElementById('userInput');
             const chatBox = document.getElementById('chatBox');
             const texto = input.value.trim();
             if (!texto) return;
+
             chatBox.innerHTML += `<div class="message user-msg">${texto}</div>`;
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
+
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
@@ -54,10 +124,12 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
+                hablarTexto(data.reply);
             } catch (error) {
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
         }
+
         document.getElementById('userInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') enviarMensaje();
         });
@@ -69,10 +141,10 @@ HTML_TEMPLATE = """
 def obtener_servicio_gmail():
     creds = Credentials(
         token=None,
-        refresh_token="1//0hNRrDJiz-K6NCgYIARAAGBESNWf-L9Ir5kRTiruuhVrzJvkKRwj9dQrGhMkNGQndoySA_agJpz6qipyBkEkiZl4DbwS9_pMazU",
+        refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
         token_uri="https://oauth2.googleapis.com/token",
-        client_id="377709097034-hj0bnbv02onkarp3vpq1vlidalfjfb5r.apps.googleusercontent.com",
-        client_secret="PEGUE_AQUI_SU_NUEVO_SECRETO_COMPLETO",
+        client_id=os.getenv("GOOGLE_CLIENT_ID"),
+        client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
         scopes=['https://www.googleapis.com/auth/gmail.readonly']
     )
     if not creds.valid:
