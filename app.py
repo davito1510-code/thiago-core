@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Módulo Estable de Gmail
+Núcleo Central de Thiago - Módulo Gmail y Calendar
 Diseñado para el Prof. David Villarreal.
 """
 
@@ -9,6 +9,7 @@ from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+import datetime
 
 app = Flask(__name__)
 
@@ -18,7 +19,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago - Gmail</title>
+    <title>Núcleo Central de Thiago - Workspace</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -39,7 +40,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Módulo de Operación de Gmail</div>
+        <div class="subtitle">Prof. David Villarreal — Módulo Operativo de Workspace</div>
         
         <div class="chat-box" id="chatBox">
             <div class="message ai-msg">Hola, profesor David. Núcleo autónomo operativo. ¿Qué directiva procesamos?</div>
@@ -83,14 +84,14 @@ HTML_TEMPLATE = """
                 recognition.stop();
             } else {
                 recognition.start();
-                document.getElementById('micBtn').classList.add('active');
+                document.getElementById('micBtn'].classList.add('active');
                 document.getElementById('userInput').placeholder = "Escuchando...";
                 escuchando = true;
             }
         }
 
         function detenerEscuchaVisual() {
-            document.getElementById('micBtn').classList.remove('active');
+            document.getElementById('micBtn'].classList.remove('active');
             document.getElementById('userInput').placeholder = "Escriba su consulta o hable con el micrófono...";
             escuchando = false;
         }
@@ -138,18 +139,21 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def obtener_servicio_gmail():
+def obtener_credenciales():
     creds = Credentials(
         token=None,
         refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=os.getenv("GOOGLE_CLIENT_ID"),
         client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-        scopes=['https://www.googleapis.com/auth/gmail.readonly']
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.readonly',
+            'https://www.googleapis.com/auth/calendar.readonly'
+        ]
     )
     if not creds.valid:
         creds.refresh(Request())
-    return build('gmail', 'v1', credentials=creds)
+    return creds
 
 @app.route("/")
 def index():
@@ -162,10 +166,13 @@ def chat():
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
     
-    # Automatización y lectura de Gmail
-    if any(k in msg.lower() for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "ingresas", "traer", "leer"]):
+    msg_lower = msg.lower()
+
+    # 1. Módulo de Gmail
+    if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "ingresas", "traer", "leer"]):
         try:
-            service = obtener_servicio_gmail()
+            creds = obtener_credenciales()
+            service = build('gmail', 'v1', credentials=creds)
             results = service.users().messages().list(userId='me', maxResults=3).execute()
             messages = results.get('messages', [])
             if not messages:
@@ -181,9 +188,38 @@ def chat():
             
             return jsonify({"reply": "Últimos correos detectados:\n\n" + "\n".join(lista_mails)})
         except Exception as e:
-            return jsonify({"reply": f"Error de autorización en la cuenta de Google: {str(e)}"})
+            return jsonify({"reply": f"Error de autorización en Gmail: {str(e)}"})
+
+    # 2. Módulo de Google Calendar
+    elif any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "compromiso", "mañana", "julio", "evento", "reunión"]):
+        try:
+            creds = obtener_credenciales()
+            service = build('calendar', 'v3', credentials=creds)
+            
+            # Obtiene los eventos desde el momento actual en adelante
+            now = datetime.datetime.utcnow().isoformat() + 'Z'
+            events_result = service.events().list(
+                calendarId='primary', timeMin=now,
+                maxResults=5, singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
+            
+            if not events:
+                return jsonify({"reply": "No se encontraron compromisos próximos en su calendario."})
+            
+            lista_eventos = []
+            for event in events:
+                start = event['start'].get('dateTime', event['start'].get('date'))
+                summary = event.get('summary', 'Sin título')
+                lista_eventos.append(f"• {summary} (Fecha/Hora: {start})")
+            
+            return jsonify({"reply": "Próximos compromisos en su agenda:\n\n" + "\n".join(lista_eventos)})
+        except Exception as e:
+            return jsonify({"reply": f"Error al acceder a Google Calendar: {str(e)}"})
+            
     else:
-        return jsonify({"reply": f"Directiva procesada en modo local: {msg}. (Módulo de Gmail activo)."})
+        return jsonify({"reply": f"Directiva recibida: {msg}. (Módulos de Gmail y Calendar activos, redacte una orden compatible con ambos servicios)."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
