@@ -72,7 +72,7 @@ def obtener_servicio_gmail():
         refresh_token="1//0hNRrDJiz-K6NCgYIARAAGBESNWf-L9Ir5kRTiruuhVrzJvkKRwj9dQrGhMkNGQndoySA_agJpz6qipyBkEkiZl4DbwS9_pMazU",
         token_uri="https://oauth2.googleapis.com/token",
         client_id="377709097034-hj0bnbv02onkarp3vpq1vlidalfjfb5r.apps.googleusercontent.com",
-        client_secret="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",
+        client_secret="PEGUE_AQUI_SU_NUEVO_SECRETO_COMPLETO",
         scopes=['https://www.googleapis.com/auth/gmail.readonly']
     )
     if not creds.valid:
