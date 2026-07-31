@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Profesional (SDK Oficial Actualizado)
+Núcleo Central de Thiago - Versión Operativa Definitiva (SDK Oficial + Gemini 1.5 Flash)
 """
 
 import os
@@ -56,7 +56,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo profesional en línea (Gemini 1.5 Pro). ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea (Gemini 1.5 Flash). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -237,7 +237,7 @@ def chat():
 
             generation_config = genai.types.GenerationConfig(temperature=0.3)
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-pro",
+                model_name="gemini-1.5-flash",
                 system_instruction=SYSTEM_INSTRUCTION,
                 generation_config=generation_config
             )
