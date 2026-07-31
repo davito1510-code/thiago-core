@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Profesional Exclusiva (Gemini 1.5 Pro Latest)
+Núcleo Central de Thiago - Versión Profesional Estable (Gemini 1.5 Pro)
 """
 
 import os
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo profesional en línea (Modelo: Gemini 1.5 Pro Latest). ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo profesional en línea (Modelo: Gemini 1.5 Pro). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -236,8 +236,8 @@ def chat():
             else:
                 prompt_final = msg
 
-            # Conexión directa y forzada al modelo Premium exacto
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_KEY}"
+            # Conexión restablecida a la nomenclatura estable validada por Google
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={GEMINI_KEY}"
             payload = {
                 "contents": [{"parts": [{"text": prompt_final}]}],
                 "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
