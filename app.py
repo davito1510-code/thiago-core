@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión con Auto-Descubrimiento de Modelos (API REST)
+Núcleo Central de Thiago - Versión Profesional Exclusiva (Gemini 1.5 Pro)
 """
 
 import os
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea. Sistema de auto-descubrimiento activo. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo profesional en línea (Modelo: Gemini 1.5 Pro). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -200,34 +200,32 @@ def chat():
             else:
                 contexto_adicional += "INFORMACIÓN DE GMAIL: No hay correos en la bandeja.\n\n"
 
+        if any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "evento", "reunión"]):
+            creds = obtener_credenciales()
+            service = build('calendar', 'v3', credentials=creds)
+            now = datetime.datetime.utcnow().isoformat() + 'Z'
+            events_result = service.events().list(
+                calendarId='primary', timeMin=now,
+                maxResults=5, singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
+            
+            if events:
+                lista_eventos = []
+                for event in events:
+                    start = event['start'].get('dateTime', event['start'].get('date'))
+                    summary = event.get('summary', 'Sin título')
+                    lista_eventos.append(f"Evento: {summary} | Fecha y Hora: {start}")
+                contexto_adicional += "INFORMACIÓN DE CALENDARIO OBTENIDA:\n" + "\n".join(lista_eventos) + "\n\n"
+            else:
+                contexto_adicional += "INFORMACIÓN DE CALENDARIO: No hay compromisos próximos.\n\n"
+
     except Exception as e:
-        contexto_adicional += f"[Advertencia: Error al sincronizar APIs de Google Workspace: {str(e)}]\n\n"
+        contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs: {str(e)}]\n\n"
 
     if GEMINI_KEY:
         try:
-            # 1. Fase de Auto-descubrimiento: Consultar modelos permitidos para esta API Key
-            model_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
-            model_response = requests.get(model_url).json()
-            
-            if "error" in model_response:
-                return jsonify({"reply": f"Error validando clave API: {model_response['error'].get('message')}"})
-                
-            available_models = [m['name'] for m in model_response.get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
-            
-            if not available_models:
-                return jsonify({"reply": "Error crítico: Su API Key no tiene permisos para usar ningún modelo generativo actual."})
-
-            # 2. Selección del mejor modelo disponible en la cuenta
-            modelo_elegido = None
-            for pref in ["models/gemini-1.5-pro", "models/gemini-1.5-flash", "models/gemini-1.0-pro", "models/gemini-pro"]:
-                if pref in available_models:
-                    modelo_elegido = pref
-                    break
-            
-            if not modelo_elegido:
-                modelo_elegido = available_models[0] # Fallback al primer modelo válido
-
-            # 3. Construcción del Prompt
             if contexto_adicional:
                 prompt_final = (
                     f"Directiva del usuario: '{msg}'.\n"
@@ -238,8 +236,8 @@ def chat():
             else:
                 prompt_final = msg
 
-            # 4. Petición al modelo dinámico
-            url = f"https://generativelanguage.googleapis.com/v1beta/{modelo_elegido}:generateContent?key={GEMINI_KEY}"
+            # Conexión directa y forzada al modelo Premium estable
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={GEMINI_KEY}"
             payload = {
                 "contents": [{"parts": [{"text": prompt_final}]}],
                 "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
@@ -252,11 +250,9 @@ def chat():
             
             if "candidates" in res_json:
                 texto_respuesta = res_json["candidates"][0]["content"]["parts"][0]["text"]
-                # Añadimos un pequeño log para que usted sepa qué modelo se conectó finalmente
-                reply_final = f"[Ejecutado a través de: {modelo_elegido}]\n\n{texto_respuesta}"
-                return jsonify({"reply": reply_final})
+                return jsonify({"reply": texto_respuesta})
             else:
-                return jsonify({"reply": f"Error en respuesta de API ({modelo_elegido}): {str(res_json)}"})
+                return jsonify({"reply": f"Error en respuesta de API: {str(res_json)}"})
                 
         except Exception as e:
             return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
