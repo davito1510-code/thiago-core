@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Profesional (SDK Oficial de Google)
+Núcleo Central de Thiago - Versión Profesional Exclusiva (Gemini 1.5 Pro Latest)
 """
 
 import os
@@ -13,7 +13,7 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Configuración nativa del SDK de Google
+# Configuración nativa del SDK oficial de Google
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
@@ -57,7 +57,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo profesional en línea (Gemini 1.5 Pro). ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo profesional en línea (Gemini 1.5 Pro Latest). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -236,10 +236,10 @@ def chat():
                 f"Responde con naturalidad analizando o leyendo los datos."
             ) if contexto_adicional else msg
 
-            # Inicialización del modelo Pro mediante el SDK oficial
+            # Conexión oficial y directa con Gemini 1.5 Pro Latest mediante el SDK
             generation_config = genai.types.GenerationConfig(temperature=0.3)
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-pro",
+                model_name="gemini-1.5-pro-latest",
                 system_instruction=SYSTEM_INSTRUCTION,
                 generation_config=generation_config
             )
