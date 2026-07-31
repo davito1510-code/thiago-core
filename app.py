@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión HTTP Estable (Endpoint v1 + Gemini 1.5 Flash)
+Núcleo Central de Thiago - Versión Definitiva (Endpoint v1 + Gemini 2.0 Flash)
 """
 
 import os
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea (Estable v1). ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea (Gemini 2.0 Flash). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -233,7 +233,7 @@ def chat():
                 f"Responde con naturalidad analizando o leyendo los datos."
             ) if contexto_adicional else msg
 
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
             payload = {
                 "contents": [{"parts": [{"text": prompt_final}]}],
                 "system_instruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
