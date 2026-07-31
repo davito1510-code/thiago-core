@@ -1,17 +1,46 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Módulo Gmail y Calendar
-Diseñado para el Prof. David Villarreal.
+Núcleo Central de Thiago - Versión Cognitiva y Workspace (Definitiva y Restaurada)
 """
 
 import os
+import datetime
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-import datetime
+import google.generativeai as genai
 
 app = Flask(__name__)
+
+# Configuración del motor cognitivo (Gemini)
+GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
+    generation_config = {
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 8192,
+    }
+    system_instruction = (
+        "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
+        "El profesor es abogado en la Ciudad Autónoma de Buenos Aires, Babalawo de Ifa tradicional yoruba, "
+        "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
+        "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
+        "Reglas estrictas: "
+        "1. Toda información debe ser fiable y contar con bases bibliográficas citadas bajo normas APA. "
+        "2. Si se consulta jurisprudencia, debes proporcionar fallos reales y exactos (CSJN u organismos internacionales de DDHH) citando la parte relevante. "
+        "3. Al actuar como asistente de idiomas, crea material didáctico interactivo basado en el texto proporcionado por el usuario. "
+        "No utilices rodeos ni explicaciones vagas."
+    )
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        generation_config=generation_config,
+        system_instruction=system_instruction
+    )
+else:
+    model = None
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -19,7 +48,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago - Workspace</title>
+    <title>Núcleo Central de Thiago - IA Activa</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -40,15 +69,15 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Módulo Operativo de Workspace</div>
+        <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Hola, profesor David. Núcleo autónomo operativo. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo y de automatización operativo. ¿Qué directiva procesamos hoy?</div>
         </div>
 
         <div class="input-group">
             <button type="button" id="micBtn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤</button>
-            <input type="text" id="userInput" placeholder="Escriba su consulta o hable con el micrófono..." autofocus>
+            <input type="text" id="userInput" placeholder="Escriba su consulta o hable..." autofocus>
             <button type="button" onclick="enviarMensaje()">Enviar</button>
         </div>
     </div>
@@ -70,7 +99,6 @@ HTML_TEMPLATE = """
                 detenerEscuchaVisual();
                 enviarMensaje();
             };
-
             recognition.onerror = function() { detenerEscuchaVisual(); };
             recognition.onend = function() { detenerEscuchaVisual(); };
         }
@@ -84,15 +112,15 @@ HTML_TEMPLATE = """
                 recognition.stop();
             } else {
                 recognition.start();
-                document.getElementById('micBtn'].classList.add('active');
+                document.getElementById('micBtn').classList.add('active');
                 document.getElementById('userInput').placeholder = "Escuchando...";
                 escuchando = true;
             }
         }
 
         function detenerEscuchaVisual() {
-            document.getElementById('micBtn'].classList.remove('active');
-            document.getElementById('userInput').placeholder = "Escriba su consulta o hable con el micrófono...";
+            document.getElementById('micBtn').classList.remove('active');
+            document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
             escuchando = false;
         }
 
@@ -168,8 +196,8 @@ def chat():
     
     msg_lower = msg.lower()
 
-    # 1. Módulo de Gmail
-    if any(k in msg_lower for k in ["correo", "mail", "bandeja", "llegó", "mensajes", "mails", "ingresas", "traer", "leer"]):
+    # 1. Automatización: Gmail
+    if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mensajes", "mails"]):
         try:
             creds = obtener_credenciales()
             service = build('gmail', 'v1', credentials=creds)
@@ -190,13 +218,12 @@ def chat():
         except Exception as e:
             return jsonify({"reply": f"Error de autorización en Gmail: {str(e)}"})
 
-    # 2. Módulo de Google Calendar
-    elif any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "compromiso", "mañana", "julio", "evento", "reunión"]):
+    # 2. Automatización: Google Calendar
+    elif any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "evento", "reunión"]):
         try:
             creds = obtener_credenciales()
             service = build('calendar', 'v3', credentials=creds)
             
-            # Obtiene los eventos desde el momento actual en adelante
             now = datetime.datetime.utcnow().isoformat() + 'Z'
             events_result = service.events().list(
                 calendarId='primary', timeMin=now,
@@ -218,8 +245,16 @@ def chat():
         except Exception as e:
             return jsonify({"reply": f"Error al acceder a Google Calendar: {str(e)}"})
             
+    # 3. Motor Cognitivo: Gemini AI
     else:
-        return jsonify({"reply": f"Directiva recibida: {msg}. (Módulos de Gmail y Calendar activos, redacte una orden compatible con ambos servicios)."})
+        if model:
+            try:
+                response = model.generate_content(msg)
+                return jsonify({"reply": response.text})
+            except Exception as e:
+                return jsonify({"reply": f"Error del motor cognitivo: {str(e)}"})
+        else:
+            return jsonify({"reply": "El motor cognitivo no se encuentra configurado."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
