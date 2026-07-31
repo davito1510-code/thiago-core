@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Conexión Universal Directa
+Núcleo Central de Thiago - Versión Profesional Exclusiva (Gemini 1.5 Pro)
 """
 
 import os
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo profesional en línea. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo profesional en línea (Gemini 1.5 Pro). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -236,10 +236,11 @@ def chat():
             else:
                 prompt_final = msg
 
-            # Utilización del endpoint estándar de Google AI Studio compatible con llaves de pago
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+            # Conexión directa y oficial con el modelo Gemini 1.5 Pro
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={GEMINI_KEY}"
             payload = {
                 "contents": [{"parts": [{"text": prompt_final}]}],
+                "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
                 "generationConfig": {"temperature": 0.3}
             }
             headers = {"Content-Type": "application/json"}
