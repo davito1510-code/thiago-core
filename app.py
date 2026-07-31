@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Profesional Estable (Gemini 1.5 Pro Versionado)
+Núcleo Central de Thiago - Versión Profesional (SDK Oficial Actualizado)
 """
 
 import os
@@ -13,7 +13,6 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Configuración oficial del SDK con la clave del profesor
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
@@ -236,10 +235,9 @@ def chat():
                 f"Responde con naturalidad analizando o leyendo los datos."
             ) if contexto_adicional else msg
 
-            # Conexión oficial utilizando el modelo versionado y estable de Gemini 1.5 Pro
             generation_config = genai.types.GenerationConfig(temperature=0.3)
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-pro-002",
+                model_name="gemini-1.5-pro",
                 system_instruction=SYSTEM_INSTRUCTION,
                 generation_config=generation_config
             )
