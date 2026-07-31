@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Operativa Definitiva (SDK Oficial + Gemini 1.5 Flash)
+Núcleo Central de Thiago - Versión HTTP Estable (Endpoint v1 + Gemini 1.5 Flash)
 """
 
 import os
 import datetime
+import requests
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-import google.generativeai as genai
 
 app = Flask(__name__)
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
 
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
@@ -56,7 +54,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea (Gemini 1.5 Flash). ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea (Estable v1). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -235,18 +233,25 @@ def chat():
                 f"Responde con naturalidad analizando o leyendo los datos."
             ) if contexto_adicional else msg
 
-            generation_config = genai.types.GenerationConfig(temperature=0.3)
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                system_instruction=SYSTEM_INSTRUCTION,
-                generation_config=generation_config
-            )
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt_final}]}],
+                "system_instruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
+                "generationConfig": {"temperature": 0.3}
+            }
+            headers = {"Content-Type": "application/json"}
             
-            response = model.generate_content(prompt_final)
-            return jsonify({"reply": response.text})
+            response = requests.post(url, json=payload, headers=headers)
+            res_json = response.json()
+            
+            if "candidates" in res_json:
+                texto_respuesta = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                return jsonify({"reply": texto_respuesta})
+            else:
+                return jsonify({"reply": f"Error en respuesta de API: {str(res_json)}"})
                 
         except Exception as e:
-            return jsonify({"reply": f"Error crítico en el SDK del motor cognitivo: {str(e)}"})
+            return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
     else:
         return jsonify({"reply": "Error: GEMINI_API_KEY no detectada en las variables de entorno."})
 
