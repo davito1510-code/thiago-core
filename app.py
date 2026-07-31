@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Cognitiva Integrada (Definitiva y Actualizada)
+Núcleo Central de Thiago - Versión Estable Definitiva
 """
 
 import os
@@ -9,24 +9,36 @@ from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Configuración del motor cognitivo con el nuevo cliente oficial
+# Configuración del motor cognitivo
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_KEY) if GEMINI_KEY else None
-
-system_instruction = (
-    "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
-    "El profesor es abogado en la Ciudad Autónoma de Buenos Aires, Babalawo de Ifa tradicional yoruba, "
-    "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
-    "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "Si el sistema te provee información de correos o calendario en el prompt, utilízala obligatoriamente para "
-    "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
-    "No utilices rodeos ni explicaciones vagas."
-)
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
+    generation_config = {
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 8192,
+    }
+    system_instruction = (
+        "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
+        "El profesor es abogado en la Ciudad Autónoma de Buenos Aires, Babalawo de Ifa tradicional yoruba, "
+        "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
+        "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
+        "Si el sistema te provee información de correos o calendario en el prompt, utilízala obligatoriamente para "
+        "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
+        "No utilices rodeos ni explicaciones vagas."
+    )
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        generation_config=generation_config,
+        system_instruction=system_instruction
+    )
+else:
+    model = None
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -228,7 +240,7 @@ def chat():
     except Exception as e:
         contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs: {str(e)}]\n\n"
 
-    if client:
+    if model:
         try:
             if contexto_adicional:
                 prompt_final = (
@@ -240,13 +252,12 @@ def chat():
             else:
                 prompt_final = msg
 
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt_final,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.3,
-                ),
+            # Generación de contenido utilizando el modelo estándar con soporte de system_instruction en config
+            response = model.generate_content(
+                prompt_final,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3
+                )
             )
             return jsonify({"reply": response.text})
         except Exception as e:
