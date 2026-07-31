@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Estable Definitiva
+Núcleo Central de Thiago - Versión Estable Ultra-Blindada
 """
 
 import os
@@ -13,7 +13,7 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Configuración del motor cognitivo
+# Configuración estricta del motor cognitivo
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
@@ -32,8 +32,9 @@ if GEMINI_KEY:
         "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
         "No utilices rodeos ni explicaciones vagas."
     )
+    # Usamos gemini-1.5-pro para garantizar compatibilidad total con la librería instalada en Render
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-1.5-pro",
         generation_config=generation_config,
         system_instruction=system_instruction
     )
@@ -252,13 +253,7 @@ def chat():
             else:
                 prompt_final = msg
 
-            # Generación de contenido utilizando el modelo estándar con soporte de system_instruction en config
-            response = model.generate_content(
-                prompt_final,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.3
-                )
-            )
+            response = model.generate_content(prompt_final)
             return jsonify({"reply": response.text})
         except Exception as e:
             return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
