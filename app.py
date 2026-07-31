@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Profesional Exclusiva (Gemini 1.5 Pro)
+Núcleo Central de Thiago - Versión Profesional (SDK Oficial de Google)
 """
 
 import os
 import datetime
-import requests
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+import google.generativeai as genai
 
 app = Flask(__name__)
 
+# Configuración nativa del SDK de Google
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
 
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
@@ -222,40 +225,30 @@ def chat():
                 contexto_adicional += "INFORMACIÓN DE CALENDARIO: No hay compromisos próximos.\n\n"
 
     except Exception as e:
-        contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs: {str(e)}]\n\n"
+        contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs de Workspace: {str(e)}]\n\n"
 
     if GEMINI_KEY:
         try:
-            if contexto_adicional:
-                prompt_final = (
-                    f"Directiva del usuario: '{msg}'.\n"
-                    f"Utiliza estrictamente la siguiente información extraída en tiempo real:\n\n"
-                    f"{contexto_adicional}\n"
-                    f"Responde con naturalidad analizando o leyendo los datos."
-                )
-            else:
-                prompt_final = msg
+            prompt_final = (
+                f"Directiva del usuario: '{msg}'.\n"
+                f"Utiliza estrictamente la siguiente información extraída en tiempo real:\n\n"
+                f"{contexto_adicional}\n"
+                f"Responde con naturalidad analizando o leyendo los datos."
+            ) if contexto_adicional else msg
 
-            # Conexión directa y oficial con el modelo Gemini 1.5 Pro
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={GEMINI_KEY}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt_final}]}],
-                "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
-                "generationConfig": {"temperature": 0.3}
-            }
-            headers = {"Content-Type": "application/json"}
+            # Inicialización del modelo Pro mediante el SDK oficial
+            generation_config = genai.types.GenerationConfig(temperature=0.3)
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-pro",
+                system_instruction=SYSTEM_INSTRUCTION,
+                generation_config=generation_config
+            )
             
-            response = requests.post(url, json=payload, headers=headers)
-            res_json = response.json()
-            
-            if "candidates" in res_json:
-                texto_respuesta = res_json["candidates"][0]["content"]["parts"][0]["text"]
-                return jsonify({"reply": texto_respuesta})
-            else:
-                return jsonify({"reply": f"Error en respuesta de API: {str(res_json)}"})
+            response = model.generate_content(prompt_final)
+            return jsonify({"reply": response.text})
                 
         except Exception as e:
-            return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
+            return jsonify({"reply": f"Error crítico en el SDK del motor cognitivo: {str(e)}"})
     else:
         return jsonify({"reply": "Error: GEMINI_API_KEY no detectada en las variables de entorno."})
 
