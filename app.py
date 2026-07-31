@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión con Conexión Directa por API REST
+Núcleo Central de Thiago - Versión API REST Definitiva
 """
 
 import os
@@ -237,8 +237,8 @@ def chat():
             else:
                 prompt_final = msg
 
-            # Petición HTTP directa a la API REST de Gemini (Evita conflictos con librerías obsoletas)
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+            # Endpoint REST actualizado utilizando gemini-2.5-flash
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
             payload = {
                 "contents": [{"parts": [{"text": prompt_final}]}],
                 "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
