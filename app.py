@@ -1,45 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Estable Ultra-Blindada
+Núcleo Central de Thiago - Versión con Conexión Directa por API REST
 """
 
 import os
 import datetime
+import requests
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Configuración estricta del motor cognitivo
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-    generation_config = {
-        "temperature": 0.3,
-        "top_p": 0.95,
-        "top_k": 40,
-        "max_output_tokens": 8192,
-    }
-    system_instruction = (
-        "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
-        "El profesor es abogado en la Ciudad Autónoma de Buenos Aires, Babalawo de Ifa tradicional yoruba, "
-        "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
-        "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-        "Si el sistema te provee información de correos o calendario en el prompt, utilízala obligatoriamente para "
-        "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
-        "No utilices rodeos ni explicaciones vagas."
-    )
-    # Usamos gemini-1.5-pro para garantizar compatibilidad total con la librería instalada en Render
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
-        generation_config=generation_config,
-        system_instruction=system_instruction
-    )
-else:
-    model = None
+
+SYSTEM_INSTRUCTION = (
+    "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
+    "El profesor es abogado en la Ciudad Autónoma de Buenos Aires, Babalawo de Ifa tradicional yoruba, "
+    "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
+    "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
+    "Si el sistema te provee información de correos o calendario en el prompt, utilízala obligatoriamente para "
+    "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
+    "No utilices rodeos ni explicaciones vagas."
+)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -241,20 +225,36 @@ def chat():
     except Exception as e:
         contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs: {str(e)}]\n\n"
 
-    if model:
+    if GEMINI_KEY:
         try:
             if contexto_adicional:
                 prompt_final = (
-                    f"El usuario te ha dado la siguiente directiva: '{msg}'.\n"
-                    f"Para cumplirla, utiliza estrictamente esta información extraída en tiempo real de sus cuentas:\n\n"
+                    f"Directiva del usuario: '{msg}'.\n"
+                    f"Utiliza estrictamente la siguiente información extraída en tiempo real:\n\n"
                     f"{contexto_adicional}\n"
-                    f"Responde de forma natural, analizando o leyendo los datos según te lo soliciten."
+                    f"Responde con naturalidad analizando o leyendo los datos."
                 )
             else:
                 prompt_final = msg
 
-            response = model.generate_content(prompt_final)
-            return jsonify({"reply": response.text})
+            # Petición HTTP directa a la API REST de Gemini (Evita conflictos con librerías obsoletas)
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt_final}]}],
+                "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
+                "generationConfig": {"temperature": 0.3}
+            }
+            headers = {"Content-Type": "application/json"}
+            
+            response = requests.post(url, json=payload, headers=headers)
+            res_json = response.json()
+            
+            if "candidates" in res_json:
+                texto_respuesta = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                return jsonify({"reply": texto_respuesta})
+            else:
+                return jsonify({"reply": f"Error en respuesta de API: {str(res_json)}"})
+                
         except Exception as e:
             return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
     else:
