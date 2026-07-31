@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Cognitiva y Workspace (Definitiva y Restaurada)
+Núcleo Central de Thiago - Versión Cognitiva Integrada (Agente Autónomo)
 """
 
 import os
@@ -28,10 +28,8 @@ if GEMINI_KEY:
         "El profesor es abogado en la Ciudad Autónoma de Buenos Aires, Babalawo de Ifa tradicional yoruba, "
         "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
         "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-        "Reglas estrictas: "
-        "1. Toda información debe ser fiable y contar con bases bibliográficas citadas bajo normas APA. "
-        "2. Si se consulta jurisprudencia, debes proporcionar fallos reales y exactos (CSJN u organismos internacionales de DDHH) citando la parte relevante. "
-        "3. Al actuar como asistente de idiomas, crea material didáctico interactivo basado en el texto proporcionado por el usuario. "
+        "Si el sistema te provee información de correos o calendario en el prompt, utilízala obligatoriamente para "
+        "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
         "No utilices rodeos ni explicaciones vagas."
     )
     model = genai.GenerativeModel(
@@ -69,10 +67,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización</div>
+        <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo y de automatización operativo. ¿Qué directiva procesamos hoy?</div>
+            <div class="message ai-msg">Núcleo cognitivo y sistemas integrados operativos. ¿Qué directiva procesamos hoy?</div>
         </div>
 
         <div class="input-group">
@@ -195,35 +193,37 @@ def chat():
         return jsonify({"reply": "Indique una directiva válida."})
     
     msg_lower = msg.lower()
+    contexto_adicional = ""
 
-    # 1. Automatización: Gmail
-    if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mensajes", "mails"]):
-        try:
+    # Extracción dinámica de datos según la solicitud
+    try:
+        # 1. Evalúa si se requieren datos de Gmail
+        if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mensajes", "mails"]):
             creds = obtener_credenciales()
             service = build('gmail', 'v1', credentials=creds)
-            results = service.users().messages().list(userId='me', maxResults=3).execute()
+            # Extraemos los 5 últimos mensajes para proveer contexto suficiente
+            results = service.users().messages().list(userId='me', maxResults=5).execute()
             messages = results.get('messages', [])
-            if not messages:
-                return jsonify({"reply": "Bandeja sincronizada: No hay mensajes recientes."})
             
-            lista_mails = []
-            for m in messages:
-                msg_data = service.users().messages().get(userId='me', id=m['id'], format='metadata', metadataHeaders=['Subject', 'From']).execute()
-                headers = msg_data.get('payload', {}).get('headers', [])
-                asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
-                remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
-                lista_mails.append(f"De: {remitente}. Asunto: {asunto}")
-            
-            return jsonify({"reply": "Últimos correos detectados:\n\n" + "\n".join(lista_mails)})
-        except Exception as e:
-            return jsonify({"reply": f"Error de autorización en Gmail: {str(e)}"})
+            if messages:
+                lista_mails = []
+                for m in messages:
+                    msg_data = service.users().messages().get(userId='me', id=m['id']).execute()
+                    headers = msg_data.get('payload', {}).get('headers', [])
+                    asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
+                    remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
+                    # Extraemos el cuerpo preliminar del mensaje (snippet)
+                    fragmento = msg_data.get('snippet', 'Sin contenido legible.')
+                    lista_mails.append(f"De: {remitente} | Asunto: {asunto} | Contenido: {fragmento}")
+                
+                contexto_adicional += "INFORMACIÓN DE GMAIL OBTENIDA:\n" + "\n".join(lista_mails) + "\n\n"
+            else:
+                contexto_adicional += "INFORMACIÓN DE GMAIL: No hay correos en la bandeja.\n\n"
 
-    # 2. Automatización: Google Calendar
-    elif any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "evento", "reunión"]):
-        try:
+        # 2. Evalúa si se requieren datos de Calendar
+        if any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "evento", "reunión"]):
             creds = obtener_credenciales()
             service = build('calendar', 'v3', credentials=creds)
-            
             now = datetime.datetime.utcnow().isoformat() + 'Z'
             events_result = service.events().list(
                 calendarId='primary', timeMin=now,
@@ -232,29 +232,40 @@ def chat():
             ).execute()
             events = events_result.get('items', [])
             
-            if not events:
-                return jsonify({"reply": "No se encontraron compromisos próximos en su calendario."})
-            
-            lista_eventos = []
-            for event in events:
-                start = event['start'].get('dateTime', event['start'].get('date'))
-                summary = event.get('summary', 'Sin título')
-                lista_eventos.append(f"• {summary} (Fecha/Hora: {start})")
-            
-            return jsonify({"reply": "Próximos compromisos en su agenda:\n\n" + "\n".join(lista_eventos)})
+            if events:
+                lista_eventos = []
+                for event in events:
+                    start = event['start'].get('dateTime', event['start'].get('date'))
+                    summary = event.get('summary', 'Sin título')
+                    lista_eventos.append(f"Evento: {summary} | Fecha y Hora: {start}")
+                contexto_adicional += "INFORMACIÓN DE CALENDARIO OBTENIDA:\n" + "\n".join(lista_eventos) + "\n\n"
+            else:
+                contexto_adicional += "INFORMACIÓN DE CALENDARIO: No hay compromisos próximos.\n\n"
+
+    except Exception as e:
+        contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs: {str(e)}]\n\n"
+
+    # 3. Procesamiento Central con Gemini
+    if model:
+        try:
+            # Si recuperamos datos (mails/agenda), obligamos a Gemini a usarlos para responder la consulta
+            if contexto_adicional:
+                prompt_final = (
+                    f"El usuario te ha dado la siguiente directiva: '{msg}'.\n"
+                    f"Para cumplirla, utiliza estrictamente esta información extraída en tiempo real de sus cuentas:\n\n"
+                    f"{contexto_adicional}\n"
+                    f"Responde de forma natural, analizando o leyendo los datos según te lo soliciten."
+                )
+            else:
+                # Si es una consulta general (derecho, idiomas, etc.), interactúa normal
+                prompt_final = msg
+
+            response = model.generate_content(prompt_final)
+            return jsonify({"reply": response.text})
         except Exception as e:
-            return jsonify({"reply": f"Error al acceder a Google Calendar: {str(e)}"})
-            
-    # 3. Motor Cognitivo: Gemini AI
+            return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
     else:
-        if model:
-            try:
-                response = model.generate_content(msg)
-                return jsonify({"reply": response.text})
-            except Exception as e:
-                return jsonify({"reply": f"Error del motor cognitivo: {str(e)}"})
-        else:
-            return jsonify({"reply": "El motor cognitivo no se encuentra configurado."})
+        return jsonify({"reply": "Error: GEMINI_API_KEY no detectada en las variables de entorno."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
