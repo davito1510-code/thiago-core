@@ -32,8 +32,9 @@ if GEMINI_KEY:
         "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
         "No utilices rodeos ni explicaciones vagas."
     )
+    # Corrección implementada: sufijo "-latest" para compatibilidad con la API
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-1.5-flash-latest",
         generation_config=generation_config,
         system_instruction=system_instruction
     )
@@ -201,7 +202,7 @@ def chat():
         if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mensajes", "mails"]):
             creds = obtener_credenciales()
             service = build('gmail', 'v1', credentials=creds)
-            # Extraemos los 5 últimos mensajes para proveer contexto suficiente
+            # Extraemos los 5 últimos mensajes para proveer contexto
             results = service.users().messages().list(userId='me', maxResults=5).execute()
             messages = results.get('messages', [])
             
@@ -212,7 +213,6 @@ def chat():
                     headers = msg_data.get('payload', {}).get('headers', [])
                     asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
                     remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
-                    # Extraemos el cuerpo preliminar del mensaje (snippet)
                     fragmento = msg_data.get('snippet', 'Sin contenido legible.')
                     lista_mails.append(f"De: {remitente} | Asunto: {asunto} | Contenido: {fragmento}")
                 
@@ -248,7 +248,6 @@ def chat():
     # 3. Procesamiento Central con Gemini
     if model:
         try:
-            # Si recuperamos datos (mails/agenda), obligamos a Gemini a usarlos para responder la consulta
             if contexto_adicional:
                 prompt_final = (
                     f"El usuario te ha dado la siguiente directiva: '{msg}'.\n"
@@ -257,7 +256,6 @@ def chat():
                     f"Responde de forma natural, analizando o leyendo los datos según te lo soliciten."
                 )
             else:
-                # Si es una consulta general (derecho, idiomas, etc.), interactúa normal
                 prompt_final = msg
 
             response = model.generate_content(prompt_final)
