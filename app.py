@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Cognitiva Integrada (Agente Autónomo)
+Núcleo Central de Thiago - Versión Cognitiva Integrada (Estable)
 """
 
 import os
@@ -32,9 +32,9 @@ if GEMINI_KEY:
         "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
         "No utilices rodeos ni explicaciones vagas."
     )
-    # Corrección implementada: sufijo "-latest" para compatibilidad con la API
+    # Corrección estricta: nombre exacto del modelo estandarizado
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash-latest",
+        model_name="gemini-1.5-flash",
         generation_config=generation_config,
         system_instruction=system_instruction
     )
@@ -196,13 +196,10 @@ def chat():
     msg_lower = msg.lower()
     contexto_adicional = ""
 
-    # Extracción dinámica de datos según la solicitud
     try:
-        # 1. Evalúa si se requieren datos de Gmail
         if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mensajes", "mails"]):
             creds = obtener_credenciales()
             service = build('gmail', 'v1', credentials=creds)
-            # Extraemos los 5 últimos mensajes para proveer contexto
             results = service.users().messages().list(userId='me', maxResults=5).execute()
             messages = results.get('messages', [])
             
@@ -220,7 +217,6 @@ def chat():
             else:
                 contexto_adicional += "INFORMACIÓN DE GMAIL: No hay correos en la bandeja.\n\n"
 
-        # 2. Evalúa si se requieren datos de Calendar
         if any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "evento", "reunión"]):
             creds = obtener_credenciales()
             service = build('calendar', 'v3', credentials=creds)
@@ -245,7 +241,6 @@ def chat():
     except Exception as e:
         contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs: {str(e)}]\n\n"
 
-    # 3. Procesamiento Central con Gemini
     if model:
         try:
             if contexto_adicional:
