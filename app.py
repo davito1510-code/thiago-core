@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Cognitiva Integrada (Estable)
+Núcleo Central de Thiago - Versión Cognitiva Integrada y Estable
 """
 
 import os
@@ -13,7 +13,7 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Configuración del motor cognitivo (Gemini)
+# Configuración robusta del motor cognitivo (Gemini)
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
@@ -32,9 +32,9 @@ if GEMINI_KEY:
         "responder con naturalidad a la petición del usuario (leyendo, resumiendo o analizando lo que se te pida). "
         "No utilices rodeos ni explicaciones vagas."
     )
-    # Corrección estricta: nombre exacto del modelo estandarizado
+    # Inicialización blindada con el modelo estándar de producción
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="models/gemini-1.5-flash",
         generation_config=generation_config,
         system_instruction=system_instruction
     )
