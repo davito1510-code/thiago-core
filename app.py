@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Definitiva con Lectura de Correos y Drive
+Núcleo Central de Thiago - Versión Optimizada (Gmail + Drive, Sin Calendario)
 """
 
 import os
@@ -26,8 +26,8 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "Tienes acceso a Gmail, Google Calendar y Google Drive. Cuando el usuario te pida revisar sus correos o "
-    "analizar documentos, utiliza obligatoriamente la información provista por el sistema en el contexto."
+    "TIENES ACCESO EXCLUSIVO a Gmail y Google Drive. NO tienes acceso al calendario ni a la agenda, por diseño estricto. "
+    "Cuando el profesor te pida revisar sus correos o analizar documentos de Drive, utiliza obligatoriamente la información provista en el contexto."
 )
 
 HTML_TEMPLATE = """
@@ -57,10 +57,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Inteligencia Integrada y Conectividad Total</div>
+        <div class="subtitle">Prof. David Villarreal — Módulos Activos: Gmail y Drive</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea. Módulos de Gmail y Drive sincronizados. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea. Módulos de correo y archivos sincronizados. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -133,7 +133,7 @@ HTML_TEMPLATE = """
             chatBox.scrollTop = chatBox.scrollHeight;
 
             const idCarga = "carga-" + Date.now();
-            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Sincronizando Workspace...</div>`;
+            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Procesando directiva...</div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
@@ -171,7 +171,6 @@ def obtener_credenciales():
         client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
         scopes=[
             'https://www.googleapis.com/auth/gmail.readonly',
-            'https://www.googleapis.com/auth/calendar.readonly',
             'https://www.googleapis.com/auth/drive.readonly'
         ]
     )
@@ -197,7 +196,7 @@ def chat():
     try:
         creds = obtener_credenciales()
         
-        # Extracción real de Gmail
+        # Lógica de Gmail
         if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mails", "emails", "recibidos"]):
             service_gmail = build('gmail', 'v1', credentials=creds)
             results = service_gmail.users().messages().list(userId='me', maxResults=5).execute()
@@ -215,7 +214,7 @@ def chat():
             else:
                 contexto_adicional += "\nCORREOS DE GMAIL: La bandeja de entrada se encuentra vacía.\n"
 
-        # Extracción de Drive
+        # Lógica de Drive
         if any(k in msg_lower for k in ["drive", "archivo", "carpeta", "clase", "compara", "unifica", "lee"]):
             service_drive = build('drive', 'v3', credentials=creds)
             results = service_drive.files().list(
