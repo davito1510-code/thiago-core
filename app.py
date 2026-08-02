@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Integral Definitiva (Gmail + Calendar + Drive + OpenAI)
+Núcleo Central de Thiago - Versión Contextual Optimizada
 """
 
 import os
@@ -20,8 +20,11 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, "
     "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "Si el sistema te provee información de correos, calendario o Google Drive, utilízala obligatoriamente para "
-    "responder con naturalidad a la petición del usuario. No utilices rodeos."
+    "REGLA ESTRICTA DE COMPORTAMIENTO: Si el usuario te pregunta únicamente si tienes acceso a Drive, Gmail o Calendar "
+    "(ejemplo: '¿Puedes acceder a mi drive?'), debes responder de forma afirmativa, concisa y natural, "
+    "preguntándole en qué carpeta desea trabajar o qué archivo busca. BAJO NINGUNA CIRCUNSTANCIA debes enumerar "
+    "o listar los archivos que el sistema te provee en segundo plano, a menos que el usuario te ordene expresamente "
+    "leerlos, buscarlos o resumirlos."
 )
 
 HTML_TEMPLATE = """
@@ -198,7 +201,7 @@ def chat():
                     fragmento = msg_data.get('snippet', 'Sin contenido legible.')
                     lista_mails.append(f"De: {remitente} | Asunto: {asunto} | Contenido: {fragmento}")
                 
-                contexto_adicional += "INFORMACIÓN DE GMAIL OBTENIDA:\n" + "\n".join(lista_mails) + "\n\n"
+                contexto_adicional += "INFORMACIÓN DE GMAIL (Segundo plano):\n" + "\n".join(lista_mails) + "\n\n"
             else:
                 contexto_adicional += "INFORMACIÓN DE GMAIL: No hay correos en la bandeja.\n\n"
 
@@ -220,7 +223,7 @@ def chat():
                     start = event['start'].get('dateTime', event['start'].get('date'))
                     summary = event.get('summary', 'Sin título')
                     lista_eventos.append(f"Evento: {summary} | Fecha y Hora: {start}")
-                contexto_adicional += "INFORMACIÓN DE CALENDARIO OBTENIDA:\n" + "\n".join(lista_eventos) + "\n\n"
+                contexto_adicional += "INFORMACIÓN DE CALENDARIO (Segundo plano):\n" + "\n".join(lista_eventos) + "\n\n"
             else:
                 contexto_adicional += "INFORMACIÓN DE CALENDARIO: No hay compromisos próximos.\n\n"
 
@@ -240,7 +243,7 @@ def chat():
                     nombre = item.get('name', 'Sin nombre')
                     tipo = item.get('mimeType', 'Desconocido')
                     lista_archivos.append(f"Archivo: {nombre} | Tipo: {tipo}")
-                contexto_adicional += "INFORMACIÓN DE GOOGLE DRIVE OBTENIDA:\n" + "\n".join(lista_archivos) + "\n\n"
+                contexto_adicional += "INFORMACIÓN DE GOOGLE DRIVE (Segundo plano):\n" + "\n".join(lista_archivos) + "\n\n"
             else:
                 contexto_adicional += "INFORMACIÓN DE GOOGLE DRIVE: No se encontraron archivos recientes.\n\n"
 
@@ -250,10 +253,9 @@ def chat():
     if OPENAI_API_KEY:
         try:
             prompt_final = (
-                f"Directiva del usuario: '{msg}'.\n"
-                f"Utiliza estrictamente la siguiente información extraída en tiempo real:\n\n"
-                f"{contexto_adicional}\n"
-                f"Responde con naturalidad analizando o leyendo los datos."
+                f"Directiva del usuario: '{msg}'.\n\n"
+                f"Datos extraídos del sistema (solo úsalos si el usuario pidió buscar o leer algo específico, NO los listes si solo pregunta si tienes acceso):\n"
+                f"{contexto_adicional}"
             ) if contexto_adicional else msg
 
             url = "https://api.openai.com/v1/chat/completions"
