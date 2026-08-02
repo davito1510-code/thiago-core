@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Contextual Optimizada
+Núcleo Central de Thiago - Versión Avanzada con Lectura Profunda de Documentos (RAG)
 """
 
 import os
 import datetime
+import io
 import requests
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import pypdf
+import docx
 
 app = Flask(__name__)
 
@@ -17,14 +21,14 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
-    "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, "
-    "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
+    "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
+    "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "REGLA ESTRICTA DE COMPORTAMIENTO: Si el usuario te pregunta únicamente si tienes acceso a Drive, Gmail o Calendar "
-    "(ejemplo: '¿Puedes acceder a mi drive?'), debes responder de forma afirmativa, concisa y natural, "
-    "preguntándole en qué carpeta desea trabajar o qué archivo busca. BAJO NINGUNA CIRCUNSTANCIA debes enumerar "
-    "o listar los archivos que el sistema te provee en segundo plano, a menos que el usuario te ordene expresamente "
-    "leerlos, buscarlos o resumirlos."
+    "REGLA 1: Si el usuario te pregunta únicamente si tienes acceso a Drive o a una carpeta, responde de forma "
+    "afirmativa y pregúntale qué archivo desea abrir. NO listes documentos sin que te lo pidan.\n"
+    "REGLA 2: Si el sistema te provee 'TEXTO EXTRAÍDO DE DRIVE', significa que el usuario te ordenó leer el interior "
+    "de sus documentos. Utiliza ese texto de manera obligatoria para redactar, analizar o resumir lo que el usuario "
+    "te haya solicitado, manteniendo el rigor intelectual."
 )
 
 HTML_TEMPLATE = """
@@ -57,7 +61,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea con capacidad de lectura profunda. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -129,6 +133,11 @@ HTML_TEMPLATE = """
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
+            // Indicador de procesamiento visual
+            const idCarga = "carga-" + Date.now();
+            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Analizando base de datos...</div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
@@ -136,10 +145,15 @@ HTML_TEMPLATE = """
                     body: JSON.stringify({ message: texto })
                 });
                 const data = await response.json();
+                
+                // Remover indicador de carga
+                document.getElementById(idCarga).remove();
+                
                 chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
                 hablarTexto(data.reply);
             } catch (error) {
+                document.getElementById(idCarga).remove();
                 chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
         }
@@ -169,6 +183,43 @@ def obtener_credenciales():
         creds.refresh(Request())
     return creds
 
+def extraer_texto_drive(service, file_id, mime_type, nombre):
+    """Descarga y extrae el texto del interior de los documentos."""
+    try:
+        # Límite de seguridad: Extraemos hasta 8000 caracteres para no saturar a OpenAI
+        limite_caracteres = 8000 
+        
+        if 'application/vnd.google-apps.document' in mime_type:
+            request = service.files().export_media(fileId=file_id, mimeType='text/plain')
+            contenido = request.execute().decode('utf-8')
+            return f"\n--- INICIO DOC: {nombre} ---\n{contenido[:limite_caracteres]}\n--- FIN DOC ---\n"
+            
+        else:
+            request = service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()
+            fh.seek(0)
+            
+            texto = ""
+            if 'pdf' in mime_type.lower():
+                lector = pypdf.PdfReader(fh)
+                for i in range(min(10, len(lector.pages))): # Lee hasta 10 páginas
+                    page_text = lector.pages[i].extract_text()
+                    if page_text: texto += page_text + "\n"
+            elif 'wordprocessingml' in mime_type.lower():
+                doc = docx.Document(fh)
+                for para in doc.paragraphs[:100]: # Lee hasta 100 párrafos
+                    texto += para.text + "\n"
+            else:
+                return f"\n[El archivo {nombre} no es texto legible por el sistema actual]\n"
+            
+            return f"\n--- INICIO ARCHIVO: {nombre} ---\n{texto[:limite_caracteres]}\n--- FIN ARCHIVO ---\n"
+    except Exception as e:
+        return f"\n[Error de extracción en {nombre}: {str(e)}]\n"
+
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
@@ -184,77 +235,50 @@ def chat():
     contexto_adicional = ""
 
     try:
-        # Sincronización de Gmail
-        if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mensajes", "mails", "emails"]):
-            creds = obtener_credenciales()
-            service = build('gmail', 'v1', credentials=creds)
-            results = service.users().messages().list(userId='me', maxResults=5).execute()
-            messages = results.get('messages', [])
-            
-            if messages:
-                lista_mails = []
-                for m in messages:
-                    msg_data = service.users().messages().get(userId='me', id=m['id']).execute()
-                    headers = msg_data.get('payload', {}).get('headers', [])
-                    asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
-                    remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
-                    fragmento = msg_data.get('snippet', 'Sin contenido legible.')
-                    lista_mails.append(f"De: {remitente} | Asunto: {asunto} | Contenido: {fragmento}")
-                
-                contexto_adicional += "INFORMACIÓN DE GMAIL (Segundo plano):\n" + "\n".join(lista_mails) + "\n\n"
-            else:
-                contexto_adicional += "INFORMACIÓN DE GMAIL: No hay correos en la bandeja.\n\n"
-
-        # Sincronización de Google Calendar
-        if any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "evento", "reunión"]):
-            creds = obtener_credenciales()
-            service = build('calendar', 'v3', credentials=creds)
-            now = datetime.datetime.utcnow().isoformat() + 'Z'
-            events_result = service.events().list(
-                calendarId='primary', timeMin=now,
-                maxResults=5, singleEvents=True,
-                orderBy='startTime'
-            ).execute()
-            events = events_result.get('items', [])
-            
-            if events:
-                lista_eventos = []
-                for event in events:
-                    start = event['start'].get('dateTime', event['start'].get('date'))
-                    summary = event.get('summary', 'Sin título')
-                    lista_eventos.append(f"Evento: {summary} | Fecha y Hora: {start}")
-                contexto_adicional += "INFORMACIÓN DE CALENDARIO (Segundo plano):\n" + "\n".join(lista_eventos) + "\n\n"
-            else:
-                contexto_adicional += "INFORMACIÓN DE CALENDARIO: No hay compromisos próximos.\n\n"
-
-        # Sincronización de Google Drive
-        if any(k in msg_lower for k in ["drive", "archivo", "documento", "pdf", "carpeta"]):
-            creds = obtener_credenciales()
-            service = build('drive', 'v3', credentials=creds)
-            results = service.files().list(
+        creds = obtener_credenciales()
+        
+        # Lógica de Google Drive y Lectura Profunda
+        palabras_drive = ["drive", "archivo", "documento", "carpeta", "plancha", "planchas", "bibliografía"]
+        palabras_lectura = ["lee", "leer", "analiza", "analizar", "redacta", "resume", "basándote", "elabora", "texto"]
+        
+        if any(k in msg_lower for k in palabras_drive):
+            service_drive = build('drive', 'v3', credentials=creds)
+            # Buscamos los 5 documentos más recientes (o acordes a la consulta si usáramos parámetros 'q')
+            results = service_drive.files().list(
                 pageSize=5,
-                fields="files(id, name, mimeType, modifiedTime)"
+                fields="files(id, name, mimeType)",
+                orderBy="modifiedTime desc"
             ).execute()
             items = results.get('files', [])
             
             if items:
-                lista_archivos = []
-                for item in items:
-                    nombre = item.get('name', 'Sin nombre')
-                    tipo = item.get('mimeType', 'Desconocido')
-                    lista_archivos.append(f"Archivo: {nombre} | Tipo: {tipo}")
-                contexto_adicional += "INFORMACIÓN DE GOOGLE DRIVE (Segundo plano):\n" + "\n".join(lista_archivos) + "\n\n"
+                # Si el usuario pide explícitamente redactar, analizar o leer, extraemos el texto
+                if any(k in msg_lower for k in palabras_lectura):
+                    contexto_adicional += "TEXTO EXTRAÍDO DE DRIVE PARA ANÁLISIS:\n"
+                    for item in items[:3]: # Solo leemos los primeros 3 para evitar desbordamiento de memoria
+                        contexto_adicional += extraer_texto_drive(service_drive, item['id'], item['mimeType'], item['name'])
+                else:
+                    # Si solo pregunta si tenemos acceso, pasamos la lista de nombres
+                    lista_archivos = [f"Archivo: {item.get('name')}" for item in items]
+                    contexto_adicional += "INFORMACIÓN DE ESTRUCTURA DE DRIVE:\n" + "\n".join(lista_archivos) + "\n"
             else:
-                contexto_adicional += "INFORMACIÓN DE GOOGLE DRIVE: No se encontraron archivos recientes.\n\n"
+                contexto_adicional += "INFORMACIÓN DE DRIVE: Carpeta vacía o sin archivos recientes.\n"
+
+        # Lógica simplificada de Gmail (opcional, solo si menciona correos)
+        if any(k in msg_lower for k in ["correo", "mail", "bandeja"]):
+            service_gmail = build('gmail', 'v1', credentials=creds)
+            results = service_gmail.users().messages().list(userId='me', maxResults=3).execute()
+            messages = results.get('messages', [])
+            if messages:
+                contexto_adicional += "\nCORREOS RECIENTES DETECTADOS.\n"
 
     except Exception as e:
-        contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs de Workspace: {str(e)}]\n\n"
+        contexto_adicional += f"[Advertencia de Sistema: {str(e)}]\n"
 
     if OPENAI_API_KEY:
         try:
             prompt_final = (
                 f"Directiva del usuario: '{msg}'.\n\n"
-                f"Datos extraídos del sistema (solo úsalos si el usuario pidió buscar o leer algo específico, NO los listes si solo pregunta si tienes acceso):\n"
                 f"{contexto_adicional}"
             ) if contexto_adicional else msg
 
@@ -269,7 +293,7 @@ def chat():
                     {"role": "system", "content": SYSTEM_INSTRUCTION},
                     {"role": "user", "content": prompt_final}
                 ],
-                "temperature": 0.3
+                "temperature": 0.4
             }
             
             response = requests.post(url, json=payload, headers=headers)
@@ -279,12 +303,12 @@ def chat():
                 texto_respuesta = res_json["choices"][0]["message"]["content"]
                 return jsonify({"reply": texto_respuesta})
             else:
-                return jsonify({"reply": f"Error en respuesta de API OpenAI: {str(res_json)}"})
+                return jsonify({"reply": f"Error OpenAI: {str(res_json)}"})
                 
         except Exception as e:
-            return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
+            return jsonify({"reply": f"Error crítico: {str(e)}"})
     else:
-        return jsonify({"reply": "Error: OPENAI_API_KEY no detectada en las variables de entorno."})
+        return jsonify({"reply": "Falta OPENAI_API_KEY."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
