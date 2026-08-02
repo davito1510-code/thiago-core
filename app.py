@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Definitiva con Comparación y Lectura de Drive
+Núcleo Central de Thiago - Versión Agente Autónomo con Function Calling (Gmail y Drive)
 """
 
 import os
 import datetime
+import json
 import io
 import requests
 from flask import Flask, render_template_string, request, jsonify
@@ -18,7 +19,6 @@ import docx
 app = Flask(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 historial_conversacion = []
 
 SYSTEM_INSTRUCTION = (
@@ -26,9 +26,8 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "TIENES ACCESO EXCLUSIVO a Gmail y Google Drive. NO tienes acceso al calendario ni a la agenda. "
-    "Cuando el profesor te pida analizar, comparar o verificar si dos archivos de Drive son idénticos, "
-    "utiliza obligatoriamente el texto extraído que el sistema te provee en el contexto para darle una respuesta exacta."
+    "TIENES ACCESO a Gmail y Google Drive a través de tus herramientas. "
+    "Utilízalas de manera autónoma cuando el profesor lo requiera para analizar correos o comparar documentos."
 )
 
 HTML_TEMPLATE = """
@@ -37,7 +36,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago</title>
+    <title>Núcleo Central de Thiago - Agente Autónomo</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -58,10 +57,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Módulos Activos: Gmail y Drive con Análisis Profundo</div>
+        <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Herramientas Activas</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea. Capacidad de comparación documental restaurada. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo agentico en línea. Herramientas autónomas preparadas. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -101,7 +100,7 @@ HTML_TEMPLATE = """
                 recognition.stop();
             } else {
                 recognition.start();
-                document.getElementById('micBtn').classList.add('active');
+                document.getElementById('micBtnclassList.add('active') if (false) else document.getElementById('micBtn').classList.add('active');
                 document.getElementById('userInput').placeholder = "Escuchando...";
                 escuchando = true;
             }
@@ -134,7 +133,7 @@ HTML_TEMPLATE = """
             chatBox.scrollTop = chatBox.scrollHeight;
 
             const idCarga = "carga-" + Date.now();
-            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Analizando documentos en Drive...</div>`;
+            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Ejecutando agente autónomo...</div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
@@ -164,7 +163,7 @@ HTML_TEMPLATE = """
 """
 
 def obtener_credenciales():
-    creds = Credentials(
+    return Credentials(
         token=None,
         refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
         token_uri="https://oauth2.googleapis.com/token",
@@ -175,17 +174,66 @@ def obtener_credenciales():
             'https://www.googleapis.com/auth/drive.readonly'
         ]
     )
-    if not creds.valid:
-        creds.refresh(Request())
-    return creds
 
-def extraer_texto_drive(service, file_id, mime_type, nombre):
+# --- DEFINICIÓN DE HERRAMIENTAS (TOOLS) PARA EL AGENTE ---
+
+def tool_listar_correos():
+    """Consulta los últimos correos recibidos en Gmail."""
     try:
+        creds = obtener_credenciales()
+        if not creds.valid: creds.refresh(Request())
+        service = build('gmail', 'v1', credentials=creds)
+        results = service.users().messages().list(userId='me', maxResults=5).execute()
+        messages = results.get('messages', [])
+        if not messages:
+            return json.dumps({"resultado": "Bandeja de entrada vacía."})
+        
+        lista = []
+        for m in messages:
+            msg_data = service.users().messages().get(userId='me', id=m['id']).execute()
+            headers = msg_data.get('payload', {}).get('headers', [])
+            asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
+            remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
+            snippet = msg_data.get('snippet', '')
+            lista.append({"remitente": remitente, "asunto": asunto, "resumen": snippet})
+        return json.dumps(lista, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+def tool_buscar_archivos_drive(query=""):
+    """Busca archivos en Google Drive."""
+    try:
+        creds = obtener_credenciales()
+        if not creds.valid: creds.refresh(Request())
+        service = build('drive', 'v3', credentials=creds)
+        
+        q = f"name contains '{query}'" if query else ""
+        results = service.files().list(
+            q=q, pageSize=10,
+            fields="files(id, name, mimeType)",
+            orderBy="modifiedTime desc"
+        ).execute()
+        items = results.get('files', [])
+        return json.dumps(items, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+def tool_leer_contenido_drive(file_id):
+    """Extrae el texto del interior de un archivo específico de Drive (PDF, Word o Doc)."""
+    try:
+        creds = obtener_credenciales()
+        if not creds.valid: creds.refresh(Request())
+        service = build('drive', 'v3', credentials=creds)
+        
+        file_meta = service.files().get(fileId=file_id, fields="name, mimeType").execute()
+        nombre = file_meta.get('name')
+        mime_type = file_meta.get('mimeType')
+        
         limite = 8000
         if 'application/vnd.google-apps.document' in mime_type:
             req = service.files().export_media(fileId=file_id, mimeType='text/plain')
             contenido = req.execute().decode('utf-8')
-            return f"\n--- CONTENIDO DE [{nombre}] (ID: {file_id}) ---\n{contenido[:limite]}\n"
+            return json.dumps({"archivo": nombre, "contenido": contenido[:limite]}, ensure_ascii=False)
         else:
             req = service.files().get_media(fileId=file_id)
             fh = io.BytesIO()
@@ -204,9 +252,54 @@ def extraer_texto_drive(service, file_id, mime_type, nombre):
                 doc = docx.Document(fh)
                 for para in doc.paragraphs[:50]:
                     texto += para.text + "\n"
-            return f"\n--- CONTENIDO DE [{nombre}] (ID: {file_id}) ---\n{texto[:limite]}\n"
+            return json.dumps({"archivo": nombre, "contenido": texto[:limite]}, ensure_ascii=False)
     except Exception as e:
-        return f"\n[No se pudo leer {nombre}: {str(e)}]\n"
+        return json.dumps({"error": str(e)})
+
+# Mapeo de funciones disponibles para el agente
+available_tools = {
+    "tool_listar_correos": tool_listar_correos,
+    "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
+    "tool_leer_contenido_drive": tool_leer_contenido_drive
+}
+
+openai_tools_definition = [
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_listar_correos",
+            "description": "Consulta los últimos correos electrónicos recibidos en la bandeja de entrada de Gmail."
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_buscar_archivos_drive",
+            "description": "Busca archivos o carpetas en Google Drive por nombre.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Término de búsqueda para filtrar el nombre del archivo (ej. 'Clase 11')."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_leer_contenido_drive",
+            "description": "Extrae el texto del interior de un archivo de Drive dado su ID único para analizarlo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive."}
+                },
+                "required": ["file_id"]
+            }
+        }
+    }
+]
 
 @app.route("/")
 def index():
@@ -219,74 +312,63 @@ def chat():
     msg = data.get("message", "").strip()
     if not msg:
         return jsonify({"reply": "Indique una directiva válida."})
-    
-    msg_lower = msg.lower()
-    contexto_adicional = ""
-
-    try:
-        creds = obtener_credenciales()
-        
-        # Lógica de Gmail
-        if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mails", "emails", "recibidos"]):
-            service_gmail = build('gmail', 'v1', credentials=creds)
-            results = service_gmail.users().messages().list(userId='me', maxResults=5).execute()
-            messages = results.get('messages', [])
-            if messages:
-                lista_mails = []
-                for m in messages:
-                    msg_data = service_gmail.users().messages().get(userId='me', id=m['id']).execute()
-                    headers = msg_data.get('payload', {}).get('headers', [])
-                    asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
-                    remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
-                    snippet = msg_data.get('snippet', 'Sin contenido.')
-                    lista_mails.append(f"De: {remitente} | Asunto: {asunto} | Resumen: {snippet}")
-                contexto_adicional += "\nCORREOS RECIENTES DE GMAIL:\n" + "\n".join(lista_mails) + "\n"
-            else:
-                contexto_adicional += "\nCORREOS DE GMAIL: La bandeja de entrada se encuentra vacía.\n"
-
-        # Lógica de Drive con extracción y comparación real de archivos
-        if any(k in msg_lower for k in ["drive", "archivo", "carpeta", "clase", "compara", "unifica", "lee", "idénticos", "idénticas"]):
-            service_drive = build('drive', 'v3', credentials=creds)
-            results = service_drive.files().list(
-                pageSize=10,
-                fields="files(id, name, mimeType)",
-                orderBy="modifiedTime desc"
-            ).execute()
-            items = results.get('files', [])
-            if items:
-                contexto_adicional += "\nARCHIVOS EN GOOGLE DRIVE:\n"
-                for item in items:
-                    contexto_adicional += f"- {item.get('name')} (ID: {item.get('id')})\n"
-                
-                # Si el usuario pide comparar o examinar archivos específicos (ej. "Clase 11"), extraemos el texto de los coincidentes
-                if any(c in msg_lower for c in ["clase", "compara", "idénticos", "idénticas", "unifica", "lee"]):
-                    contexto_adicional += "\n--- TEXTO EXTRAÍDO DE ARCHIVOS PARA ANÁLISIS ---\n"
-                    for item in items:
-                        nombre_archivo = item.get('name', '').lower()
-                        if 'clase' in nombre_archivo or 'examen' in nombre_archivo:
-                            contexto_adicional += extraer_texto_drive(service_drive, item['id'], item['mimeType'], item['name'])
-
-    except Exception as e:
-        contexto_adicional += f"[Advertencia Workspace: {str(e)}]\n"
 
     if OPENAI_API_KEY:
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
             mensajes_api.extend(historial_conversacion)
-            
-            prompt_actual = f"Directiva del usuario: '{msg}'.\n{contexto_adicional}"
-            mensajes_api.append({"role": "user", "content": prompt_actual})
+            mensajes_api.append({"role": "user", "content": msg})
 
             url = "https://api.openai.com/v1/chat/completions"
             headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "gpt-4o-mini", "messages": mensajes_api, "temperature": 0.3}
+            
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": mensajes_api,
+                "tools": openai_tools_definition,
+                "tool_choice": "auto",
+                "temperature": 0.3
+            }
             
             response = requests.post(url, json=payload, headers=headers)
             res_json = response.json()
             
             if "choices" in res_json:
-                texto_respuesta = res_json["choices"][0]["message"]["content"]
+                message_resp = res_json["choices"][0]["message"]
                 
+                # Verificamos si el agente decidió invocar una herramienta
+                if "tool_calls" in message_resp:
+                    mensajes_api.append(message_resp) # Guardamos la intención del modelo
+                    
+                    for tool_call in message_resp["tool_calls"]:
+                        func_name = tool_call["function"]["name"]
+                        func_args = json.loads(tool_call["function"]["arguments"] or "{}")
+                        
+                        if func_name in available_tools:
+                            # Ejecución real de la herramienta de Google Workspace
+                            tool_result = available_tools[func_name](**func_args)
+                        else:
+                            tool_result = json.dumps({"error": "Herramienta no encontrada"})
+                            
+                        mensajes_api.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": tool_result
+                        })
+                    
+                    # Segunda llamada a OpenAI con el resultado de la herramienta para generar la respuesta final
+                    payload_seguimiento = {
+                        "model": "gpt-4o-mini",
+                        "messages": mensajes_api,
+                        "temperature": 0.3
+                    }
+                    resp_final = requests.post(url, json=payload_seguimiento, headers=headers)
+                    json_final = resp_final.json()
+                    texto_respuesta = json_final["choices"][0]["message"]["content"]
+                else:
+                    texto_respuesta = message_resp.get("content", "Procesamiento completado.")
+
+                # Actualizamos memoria de sesión
                 historial_conversacion.append({"role": "user", "content": msg})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
                 if len(historial_conversacion) > 10:
@@ -297,7 +379,7 @@ def chat():
                 return jsonify({"reply": f"Error OpenAI: {str(res_json)}"})
                 
         except Exception as e:
-            return jsonify({"reply": f"Error crítico cognitivo: {str(e)}"})
+            return jsonify({"reply": f"Error crítico del agente: {str(e)}"})
     else:
         return jsonify({"reply": "Falta OPENAI_API_KEY."})
 
