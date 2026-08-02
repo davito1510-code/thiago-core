@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Agente Autónomo (Corrección de Interfaz)
+Núcleo Central de Thiago - Agente Autónomo Integrado (Gmail, Calendar y Drive)
 """
 
 import os
 import datetime
 import json
 import io
+import base64
 import requests
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
@@ -26,8 +27,9 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "TIENES ACCESO a Gmail y Google Drive a través de tus herramientas. "
-    "Utilízalas de manera autónoma cuando el profesor lo requiera para analizar correos o comparar documentos."
+    "TIENES ACCESO TOTAL Y AUTORIZADO a Gmail (cuerpo íntegro de correos), Google Calendar (eventos y agenda) "
+    "y Google Drive (búsqueda y lectura analítica de documentos). "
+    "Utiliza tus herramientas de manera autónoma y precisa cuando el profesor lo ordene."
 )
 
 HTML_TEMPLATE = """
@@ -36,7 +38,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago - Agente Autónomo</title>
+    <title>Núcleo Central de Thiago - Agente Integrado</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -57,10 +59,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Herramientas Activas</div>
+        <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Conectividad Total</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo agentico en línea. Interfaz restaurada y operativa. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral en línea. Módulos de Gmail, Calendar y Drive sincronizados. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -171,17 +173,44 @@ def obtener_credenciales():
         client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
         scopes=[
             'https://www.googleapis.com/auth/gmail.readonly',
+            'https://www.googleapis.com/auth/calendar.readonly',
             'https://www.googleapis.com/auth/drive.readonly'
         ]
     )
 
+def extraer_cuerpo_gmail(payload):
+    """Extrae recursivamente el cuerpo de texto plano de un mensaje de correo."""
+    body = ""
+    if 'parts' in payload:
+        for part in payload['parts']:
+            if part.get('mimeType') == 'text/plain':
+                data = part.get('body', {}).get('data')
+                if data:
+                    try:
+                        body = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                        break
+                    except:
+                        pass
+            elif 'parts' in part:
+                body = extraer_cuerpo_gmail(part)
+                if body: break
+    elif 'body' in payload and payload['body'].get('data'):
+        data = payload['body']['data']
+        try:
+            body = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+        except:
+            pass
+    return body[:4000] if body else "Sin cuerpo de texto legible."
+
+# --- HERRAMIENTAS AUTÓNOMAS (TOOLS) ---
+
 def tool_listar_correos():
-    """Consulta los últimos correos recibidos en Gmail."""
+    """Consulta los últimos correos electrónicos de Gmail y extrae su contenido íntegro."""
     try:
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
         service = build('gmail', 'v1', credentials=creds)
-        results = service.users().messages().list(userId='me', maxResults=5).execute()
+        results = service.users().messages().list(userId='me', maxResults=3).execute()
         messages = results.get('messages', [])
         if not messages:
             return json.dumps({"resultado": "Bandeja de entrada vacía."})
@@ -189,17 +218,46 @@ def tool_listar_correos():
         lista = []
         for m in messages:
             msg_data = service.users().messages().get(userId='me', id=m['id']).execute()
-            headers = msg_data.get('payload', {}).get('headers', [])
+            payload = msg_data.get('payload', {})
+            headers = payload.get('headers', [])
             asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
             remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
-            snippet = msg_data.get('snippet', '')
-            lista.append({"remitente": remitente, "asunto": asunto, "resumen": snippet})
+            cuerpo = extraer_cuerpo_gmail(payload)
+            lista.append({"remitente": remitente, "asunto": asunto, "cuerpo_completo": cuerpo})
         return json.dumps(lista, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
+def tool_consultar_calendario():
+    """Consulta los próximos eventos en Google Calendar."""
+    try:
+        creds = obtener_credenciales()
+        if not creds.valid: creds.refresh(Request())
+        service = build('calendar', 'v3', credentials=creds)
+        
+        now = datetime.datetime.utcnow().isoformat() + 'Z'
+        events_result = service.events().list(
+            calendarId='primary', timeMin=now,
+            maxResults=5, singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+        
+        if not events:
+            return json.dumps({"resultado": "No hay eventos próximos en la agenda."})
+        
+        lista_eventos = []
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            summary = event.get('summary', 'Sin título')
+            lista_eventos.append({"fecha_inicio": start, "evento": summary})
+            
+        return json.dumps(lista_eventos, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
 def tool_buscar_archivos_drive(query=""):
-    """Busca archivos en Google Drive."""
+    """Busca archivos en Google Drive por nombre."""
     try:
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
@@ -216,7 +274,7 @@ def tool_buscar_archivos_drive(query=""):
         return json.dumps({"error": str(e)})
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el texto del interior de un archivo específico de Drive."""
+    """Extrae el texto interno de un archivo específico de Drive dado su ID."""
     try:
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
@@ -254,6 +312,7 @@ def tool_leer_contenido_drive(file_id):
 
 available_tools = {
     "tool_listar_correos": tool_listar_correos,
+    "tool_consultar_calendario": tool_consultar_calendario,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
     "tool_leer_contenido_drive": tool_leer_contenido_drive
 }
@@ -263,18 +322,25 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_listar_correos",
-            "description": "Consulta los últimos correos electrónicos recibidos en la bandeja de entrada de Gmail."
+            "description": "Consulta los últimos correos de Gmail y extrae su cuerpo íntegro."
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_consultar_calendario",
+            "description": "Consulta los próximos eventos y citas en Google Calendar."
         }
     },
     {
         "type": "function",
         "function": {
             "name": "tool_buscar_archivos_drive",
-            "description": "Busca archivos o carpetas en Google Drive por nombre.",
+            "description": "Busca archivos en Google Drive por nombre para obtener sus IDs.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Término de búsqueda para filtrar el nombre del archivo (ej. 'Clase 11')."}
+                    "query": {"type": "string", "description": "Término de búsqueda (ej. 'Clase 11')."}
                 },
                 "required": []
             }
@@ -284,11 +350,11 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto del interior de un archivo de Drive dado su ID único para analizarlo.",
+            "description": "Extrae el texto interno de un archivo de Drive usando su ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive."}
+                    "file_id": {"type": "string", "description": "El ID del archivo en Google Drive."}
                 },
                 "required": ["file_id"]
             }
