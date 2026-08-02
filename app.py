@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Definitiva con OpenAI (GPT-4o-mini)
+Núcleo Central de Thiago - Versión Integral Definitiva (Gmail + Calendar + Drive + OpenAI)
 """
 
 import os
@@ -20,7 +20,7 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, "
     "Batuque Isesa, profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "Si el sistema te provee información de correos o calendario, utilízala obligatoriamente para "
+    "Si el sistema te provee información de correos, calendario o Google Drive, utilízala obligatoriamente para "
     "responder con naturalidad a la petición del usuario. No utilices rodeos."
 )
 
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea (OpenAI GPT-4o-mini). ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -158,7 +158,8 @@ def obtener_credenciales():
         client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
         scopes=[
             'https://www.googleapis.com/auth/gmail.readonly',
-            'https://www.googleapis.com/auth/calendar.readonly'
+            'https://www.googleapis.com/auth/calendar.readonly',
+            'https://www.googleapis.com/auth/drive.readonly'
         ]
     )
     if not creds.valid:
@@ -180,6 +181,7 @@ def chat():
     contexto_adicional = ""
 
     try:
+        # Sincronización de Gmail
         if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mensajes", "mails", "emails"]):
             creds = obtener_credenciales()
             service = build('gmail', 'v1', credentials=creds)
@@ -200,6 +202,7 @@ def chat():
             else:
                 contexto_adicional += "INFORMACIÓN DE GMAIL: No hay correos en la bandeja.\n\n"
 
+        # Sincronización de Google Calendar
         if any(k in msg_lower for k in ["calendario", "agenda", "compromisos", "evento", "reunión"]):
             creds = obtener_credenciales()
             service = build('calendar', 'v3', credentials=creds)
@@ -220,6 +223,26 @@ def chat():
                 contexto_adicional += "INFORMACIÓN DE CALENDARIO OBTENIDA:\n" + "\n".join(lista_eventos) + "\n\n"
             else:
                 contexto_adicional += "INFORMACIÓN DE CALENDARIO: No hay compromisos próximos.\n\n"
+
+        # Sincronización de Google Drive
+        if any(k in msg_lower for k in ["drive", "archivo", "documento", "pdf", "carpeta"]):
+            creds = obtener_credenciales()
+            service = build('drive', 'v3', credentials=creds)
+            results = service.files().list(
+                pageSize=5,
+                fields="files(id, name, mimeType, modifiedTime)"
+            ).execute()
+            items = results.get('files', [])
+            
+            if items:
+                lista_archivos = []
+                for item in items:
+                    nombre = item.get('name', 'Sin nombre')
+                    tipo = item.get('mimeType', 'Desconocido')
+                    lista_archivos.append(f"Archivo: {nombre} | Tipo: {tipo}")
+                contexto_adicional += "INFORMACIÓN DE GOOGLE DRIVE OBTENIDA:\n" + "\n".join(lista_archivos) + "\n\n"
+            else:
+                contexto_adicional += "INFORMACIÓN DE GOOGLE DRIVE: No se encontraron archivos recientes.\n\n"
 
     except Exception as e:
         contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs de Workspace: {str(e)}]\n\n"
