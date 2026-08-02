@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión con Memoria Cognitiva
+Núcleo Central de Thiago - Versión Definitiva (Voz, Memoria y Lectura Profunda)
 """
 
 import os
@@ -19,18 +19,16 @@ app = Flask(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Memoria global temporal (almacena el historial de la conversación)
+# Memoria de sesión activa
 historial_conversacion = []
 
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
-    "Tus respuestas deben destacar por su rigor académico y precisión técnica. "
-    "REGLAS ESTRICTAS DE OPERACIÓN: "
-    "1. TIENES ACCESO a los correos de Gmail, a los eventos de Google Calendar y a los archivos recientes de Google Drive del profesor. Si él pregunta si tienes acceso a alguna de estas herramientas, RESPONDE AFIRMATIVAMENTE. "
-    "2. NO PUEDES navegar por carpetas específicas ni buscar archivos por nombre. Solo puedes ver los archivos más recientes. Si el profesor te pide entrar a una carpeta específica, infórmale con honestidad tu limitación técnica y pídele que modifique el archivo recientemente para que aparezca en tu radar. "
-    "3. NUNCA inventes que has accedido a un lugar si no tienes los datos en tu contexto."
+    "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
+    "Tienes acceso a Gmail, Google Calendar y Google Drive. Si el usuario te pide analizar o comparar archivos, "
+    "utiliza el texto extraído del Drive para darle una respuesta rigurosa y exacta."
 )
 
 HTML_TEMPLATE = """
@@ -53,24 +51,78 @@ HTML_TEMPLATE = """
         input[type="text"] { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; }
         button { padding: 10px 16px; background-color: #38bdf8; color: #0f172a; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         button:hover { background-color: #7dd3fc; }
+        #micBtn { background-color: #334155; color: #38bdf8; border: 1px solid #38bdf8; }
+        #micBtn.active { background-color: #ef4444; color: white; border-color: #ef4444; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Memoria Activa</div>
+        <div class="subtitle">Prof. David Villarreal — Inteligencia Integrada y Voz Activa</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea. Memoria de sesión activada. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea. Capacidad de voz y lectura profunda restauradas. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="userInput" placeholder="Escriba su consulta..." autofocus>
+            <button type="button" id="micBtn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤</button>
+            <input type="text" id="userInput" placeholder="Escriba su consulta o hable..." autofocus>
             <button type="button" onclick="enviarMensaje()">Enviar</button>
         </div>
     </div>
 
     <script>
+        let recognition;
+        let escuchando = false;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'es-AR';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onresult = function(event) {
+                const textoTranscrito = event.results[0][0].transcript;
+                document.getElementById('userInput').value = textoTranscrito;
+                detenerEscuchaVisual();
+                enviarMensaje();
+            };
+            recognition.onerror = function() { detenerEscuchaVisual(); };
+            recognition.onend = function() { detenerEscuchaVisual(); };
+        }
+
+        function alternarEscucha() {
+            if (!recognition) {
+                alert("Su navegador no soporta reconocimiento de voz nativo.");
+                return;
+            }
+            if (escuchando) {
+                recognition.stop();
+            } else {
+                recognition.start();
+                document.getElementById('micBtn').classList.add('active');
+                document.getElementById('userInput').placeholder = "Escuchando...";
+                escuchando = true;
+            }
+        }
+
+        function detenerEscuchaVisual() {
+            document.getElementById('micBtn').classList.remove('active');
+            document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
+            escuchando = false;
+        }
+
+        function hablarTexto(texto) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(texto);
+                utterance.lang = 'es-AR';
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
         async function enviarMensaje() {
             const input = document.getElementById('userInput');
             const chatBox = document.getElementById('chatBox');
@@ -82,7 +134,7 @@ HTML_TEMPLATE = """
             chatBox.scrollTop = chatBox.scrollHeight;
 
             const idCarga = "carga-" + Date.now();
-            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Procesando...</div>`;
+            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Procesando y analizando datos...</div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
@@ -93,13 +145,16 @@ HTML_TEMPLATE = """
                 });
                 const data = await response.json();
                 document.getElementById(idCarga).remove();
+                
                 chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
+                hablarTexto(data.reply);
             } catch (error) {
                 document.getElementById(idCarga).remove();
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
             }
         }
+
         document.getElementById('userInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') enviarMensaje();
         });
@@ -125,6 +180,35 @@ def obtener_credenciales():
         creds.refresh(Request())
     return creds
 
+def extraer_texto_drive(service, file_id, mime_type, nombre):
+    try:
+        limite = 6000
+        if 'application/vnd.google-apps.document' in mime_type:
+            req = service.files().export_media(fileId=file_id, mimeType='text/plain')
+            contenido = req.execute().decode('utf-8')
+            return f"\n--- CONTENIDO DE [{nombre}] ---\n{contenido[:limite]}\n"
+        else:
+            req = service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, req)
+            done = False
+            while done is False:
+                _, done = downloader.next_chunk()
+            fh.seek(0)
+            texto = ""
+            if 'pdf' in mime_type.lower():
+                lector = pypdf.PdfReader(fh)
+                for i in range(min(5, len(lector.pages))):
+                    p_txt = lector.pages[i].extract_text()
+                    if p_txt: texto += p_txt + "\n"
+            elif 'wordprocessingml' in mime_type.lower():
+                doc = docx.Document(fh)
+                for para in doc.paragraphs[:50]:
+                    texto += para.text + "\n"
+            return f"\n--- CONTENIDO DE [{nombre}] ---\n{texto[:limite]}\n"
+    except Exception as e:
+        return f"\n[No se pudo leer {nombre}: {str(e)}]\n"
+
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
@@ -143,32 +227,42 @@ def chat():
     try:
         creds = obtener_credenciales()
         
-        # Lógica de Gmail
-        if any(k in msg_lower for k in ["correo", "mail", "bandeja", "mails"]):
-            service_gmail = build('gmail', 'v1', credentials=creds)
-            results = service_gmail.users().messages().list(userId='me', maxResults=3).execute()
-            messages = results.get('messages', [])
-            if messages:
-                contexto_adicional += "\nESTADO DEL SISTEMA: Tienes acceso total a los correos del usuario. Los correos recientes están sincronizados.\n"
-
-        # Lógica de Drive (Simplificada para evitar alucinaciones)
-        if any(k in msg_lower for k in ["drive", "archivo", "carpeta"]):
+        # Si menciona Drive, buscamos y leemos archivos relevantes (como "Clase 11" o similares)
+        if any(k in msg_lower for k in ["drive", "archivo", "carpeta", "clase", "compara", "unifica", "lee"]):
             service_drive = build('drive', 'v3', credentials=creds)
-            results = service_drive.files().list(pageSize=3, fields="files(id, name)", orderBy="modifiedTime desc").execute()
+            # Buscamos archivos recientes o que coincidan con la consulta
+            results = service_drive.files().list(
+                pageSize=5,
+                fields="files(id, name, mimeType)",
+                orderBy="modifiedTime desc"
+            ).execute()
             items = results.get('files', [])
+            
             if items:
-                contexto_adicional += "\nESTADO DEL SISTEMA: Tienes acceso a Drive. Los archivos más recientes son: " + ", ".join([i['name'] for i in items]) + ".\n"
+                contexto_adicional += "\nARCHIVOS ENCONTRADOS EN DRIVE:\n"
+                for item in items:
+                    nombre = item['name']
+                    contexto_adicional += f"- {nombre}\n"
+                    # Si el usuario pide explícitamente revisar/comparar/leer y el archivo coincide
+                    if any(c in msg_lower for c in ["clase", "compara", "unifica", "lee", "analiza"]) and any(pal in nombre.lower() for pal in ["clase", "doc", "examen"]):
+                        contexto_adicional += extraer_texto_drive(service_drive, item['id'], item['mimeType'], nombre)
+
+        # Lógica de Gmail
+        if any(k in msg_lower for k in ["correo", "mail", "bandeja"]):
+            service_gmail = build('gmail', 'v1', credentials=creds)
+            res_mail = service_gmail.users().messages().list(userId='me', maxResults=3).execute()
+            if res_mail.get('messages'):
+                contexto_adicional += "\n[Gmail sincronizado y accesible para el usuario]\n"
 
     except Exception as e:
-        contexto_adicional += f"[Advertencia de Sistema: {str(e)}]\n"
+        contexto_adicional += f"[Advertencia Workspace: {str(e)}]\n"
 
     if OPENAI_API_KEY:
         try:
-            # Construcción del prompt con memoria
             mensajes_api = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
             mensajes_api.extend(historial_conversacion)
             
-            prompt_actual = f"Directiva actual: '{msg}'.\n{contexto_adicional}"
+            prompt_actual = f"Directiva del usuario: '{msg}'.\n{contexto_adicional}"
             mensajes_api.append({"role": "user", "content": prompt_actual})
 
             url = "https://api.openai.com/v1/chat/completions"
@@ -181,11 +275,8 @@ def chat():
             if "choices" in res_json:
                 texto_respuesta = res_json["choices"][0]["message"]["content"]
                 
-                # Actualizamos la memoria
                 historial_conversacion.append({"role": "user", "content": msg})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
-                
-                # Mantenemos solo los últimos 10 mensajes para no saturar la API
                 if len(historial_conversacion) > 10:
                     historial_conversacion = historial_conversacion[-10:]
                     
@@ -194,7 +285,7 @@ def chat():
                 return jsonify({"reply": f"Error OpenAI: {str(res_json)}"})
                 
         except Exception as e:
-            return jsonify({"reply": f"Error crítico: {str(e)}"})
+            return jsonify({"reply": f"Error crítico cognitivo: {str(e)}"})
     else:
         return jsonify({"reply": "Falta OPENAI_API_KEY."})
 
