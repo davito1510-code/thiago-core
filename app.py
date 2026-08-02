@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Optimizada (Gmail + Drive, Sin Calendario)
+Núcleo Central de Thiago - Versión Definitiva con Comparación y Lectura de Drive
 """
 
 import os
@@ -26,8 +26,9 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "TIENES ACCESO EXCLUSIVO a Gmail y Google Drive. NO tienes acceso al calendario ni a la agenda, por diseño estricto. "
-    "Cuando el profesor te pida revisar sus correos o analizar documentos de Drive, utiliza obligatoriamente la información provista en el contexto."
+    "TIENES ACCESO EXCLUSIVO a Gmail y Google Drive. NO tienes acceso al calendario ni a la agenda. "
+    "Cuando el profesor te pida analizar, comparar o verificar si dos archivos de Drive son idénticos, "
+    "utiliza obligatoriamente el texto extraído que el sistema te provee en el contexto para darle una respuesta exacta."
 )
 
 HTML_TEMPLATE = """
@@ -57,10 +58,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Módulos Activos: Gmail y Drive</div>
+        <div class="subtitle">Prof. David Villarreal — Módulos Activos: Gmail y Drive con Análisis Profundo</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea. Módulos de correo y archivos sincronizados. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea. Capacidad de comparación documental restaurada. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -133,7 +134,7 @@ HTML_TEMPLATE = """
             chatBox.scrollTop = chatBox.scrollHeight;
 
             const idCarga = "carga-" + Date.now();
-            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Procesando directiva...</div>`;
+            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Analizando documentos en Drive...</div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
@@ -178,6 +179,35 @@ def obtener_credenciales():
         creds.refresh(Request())
     return creds
 
+def extraer_texto_drive(service, file_id, mime_type, nombre):
+    try:
+        limite = 8000
+        if 'application/vnd.google-apps.document' in mime_type:
+            req = service.files().export_media(fileId=file_id, mimeType='text/plain')
+            contenido = req.execute().decode('utf-8')
+            return f"\n--- CONTENIDO DE [{nombre}] (ID: {file_id}) ---\n{contenido[:limite]}\n"
+        else:
+            req = service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, req)
+            done = False
+            while done is False:
+                _, done = downloader.next_chunk()
+            fh.seek(0)
+            texto = ""
+            if 'pdf' in mime_type.lower():
+                lector = pypdf.PdfReader(fh)
+                for i in range(min(5, len(lector.pages))):
+                    p_txt = lector.pages[i].extract_text()
+                    if p_txt: texto += p_txt + "\n"
+            elif 'wordprocessingml' in mime_type.lower():
+                doc = docx.Document(fh)
+                for para in doc.paragraphs[:50]:
+                    texto += para.text + "\n"
+            return f"\n--- CONTENIDO DE [{nombre}] (ID: {file_id}) ---\n{texto[:limite]}\n"
+    except Exception as e:
+        return f"\n[No se pudo leer {nombre}: {str(e)}]\n"
+
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
@@ -214,18 +244,27 @@ def chat():
             else:
                 contexto_adicional += "\nCORREOS DE GMAIL: La bandeja de entrada se encuentra vacía.\n"
 
-        # Lógica de Drive
-        if any(k in msg_lower for k in ["drive", "archivo", "carpeta", "clase", "compara", "unifica", "lee"]):
+        # Lógica de Drive con extracción y comparación real de archivos
+        if any(k in msg_lower for k in ["drive", "archivo", "carpeta", "clase", "compara", "unifica", "lee", "idénticos", "idénticas"]):
             service_drive = build('drive', 'v3', credentials=creds)
             results = service_drive.files().list(
-                pageSize=5,
+                pageSize=10,
                 fields="files(id, name, mimeType)",
                 orderBy="modifiedTime desc"
             ).execute()
             items = results.get('files', [])
             if items:
-                lista_archivos = [f"Archivo: {item.get('name')}" for item in items]
-                contexto_adicional += "\nARCHIVOS RECIENTES EN GOOGLE DRIVE:\n" + "\n".join(lista_archivos) + "\n"
+                contexto_adicional += "\nARCHIVOS EN GOOGLE DRIVE:\n"
+                for item in items:
+                    contexto_adicional += f"- {item.get('name')} (ID: {item.get('id')})\n"
+                
+                # Si el usuario pide comparar o examinar archivos específicos (ej. "Clase 11"), extraemos el texto de los coincidentes
+                if any(c in msg_lower for c in ["clase", "compara", "idénticos", "idénticas", "unifica", "lee"]):
+                    contexto_adicional += "\n--- TEXTO EXTRAÍDO DE ARCHIVOS PARA ANÁLISIS ---\n"
+                    for item in items:
+                        nombre_archivo = item.get('name', '').lower()
+                        if 'clase' in nombre_archivo or 'examen' in nombre_archivo:
+                            contexto_adicional += extraer_texto_drive(service_drive, item['id'], item['mimeType'], item['name'])
 
     except Exception as e:
         contexto_adicional += f"[Advertencia Workspace: {str(e)}]\n"
