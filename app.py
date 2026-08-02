@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Agente Autónomo con Function Calling (Gmail y Drive)
+Núcleo Central de Thiago - Agente Autónomo (Corrección de Interfaz)
 """
 
 import os
@@ -60,7 +60,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Herramientas Activas</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo agentico en línea. Herramientas autónomas preparadas. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo agentico en línea. Interfaz restaurada y operativa. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -100,7 +100,7 @@ HTML_TEMPLATE = """
                 recognition.stop();
             } else {
                 recognition.start();
-                document.getElementById('micBtnclassList.add('active') if (false) else document.getElementById('micBtn').classList.add('active');
+                document.getElementById('micBtn').classList.add('active');
                 document.getElementById('userInput').placeholder = "Escuchando...";
                 escuchando = true;
             }
@@ -175,8 +175,6 @@ def obtener_credenciales():
         ]
     )
 
-# --- DEFINICIÓN DE HERRAMIENTAS (TOOLS) PARA EL AGENTE ---
-
 def tool_listar_correos():
     """Consulta los últimos correos recibidos en Gmail."""
     try:
@@ -206,7 +204,6 @@ def tool_buscar_archivos_drive(query=""):
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
         service = build('drive', 'v3', credentials=creds)
-        
         q = f"name contains '{query}'" if query else ""
         results = service.files().list(
             q=q, pageSize=10,
@@ -219,12 +216,11 @@ def tool_buscar_archivos_drive(query=""):
         return json.dumps({"error": str(e)})
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el texto del interior de un archivo específico de Drive (PDF, Word o Doc)."""
+    """Extrae el texto del interior de un archivo específico de Drive."""
     try:
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
         service = build('drive', 'v3', credentials=creds)
-        
         file_meta = service.files().get(fileId=file_id, fields="name, mimeType").execute()
         nombre = file_meta.get('name')
         mime_type = file_meta.get('mimeType')
@@ -256,7 +252,6 @@ def tool_leer_contenido_drive(file_id):
     except Exception as e:
         return json.dumps({"error": str(e)})
 
-# Mapeo de funciones disponibles para el agente
 available_tools = {
     "tool_listar_correos": tool_listar_correos,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
@@ -336,16 +331,13 @@ def chat():
             if "choices" in res_json:
                 message_resp = res_json["choices"][0]["message"]
                 
-                # Verificamos si el agente decidió invocar una herramienta
                 if "tool_calls" in message_resp:
-                    mensajes_api.append(message_resp) # Guardamos la intención del modelo
-                    
+                    mensajes_api.append(message_resp)
                     for tool_call in message_resp["tool_calls"]:
                         func_name = tool_call["function"]["name"]
                         func_args = json.loads(tool_call["function"]["arguments"] or "{}")
                         
                         if func_name in available_tools:
-                            # Ejecución real de la herramienta de Google Workspace
                             tool_result = available_tools[func_name](**func_args)
                         else:
                             tool_result = json.dumps({"error": "Herramienta no encontrada"})
@@ -356,7 +348,6 @@ def chat():
                             "content": tool_result
                         })
                     
-                    # Segunda llamada a OpenAI con el resultado de la herramienta para generar la respuesta final
                     payload_seguimiento = {
                         "model": "gpt-4o-mini",
                         "messages": mensajes_api,
@@ -368,7 +359,6 @@ def chat():
                 else:
                     texto_respuesta = message_resp.get("content", "Procesamiento completado.")
 
-                # Actualizamos memoria de sesión
                 historial_conversacion.append({"role": "user", "content": msg})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
                 if len(historial_conversacion) > 10:
