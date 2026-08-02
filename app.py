@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Versión Definitiva (Endpoint v1 + Gemini 2.0 Flash)
+Núcleo Central de Thiago - Versión Definitiva con OpenAI (GPT-4o-mini)
 """
 
 import os
@@ -13,7 +13,7 @@ from googleapiclient.discovery import build
 
 app = Flask(__name__)
 
-GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Inteligencia y Automatización Integrada</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo cognitivo en línea (Gemini 2.0 Flash). ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo cognitivo en línea (OpenAI GPT-4o-mini). ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -224,7 +224,7 @@ def chat():
     except Exception as e:
         contexto_adicional += f"[Advertencia de Sistema: Error al sincronizar APIs de Workspace: {str(e)}]\n\n"
 
-    if GEMINI_KEY:
+    if OPENAI_API_KEY:
         try:
             prompt_final = (
                 f"Directiva del usuario: '{msg}'.\n"
@@ -233,27 +233,33 @@ def chat():
                 f"Responde con naturalidad analizando o leyendo los datos."
             ) if contexto_adicional else msg
 
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt_final}]}],
-                "system_instruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
-                "generationConfig": {"temperature": 0.3}
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
             }
-            headers = {"Content-Type": "application/json"}
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": SYSTEM_INSTRUCTION},
+                    {"role": "user", "content": prompt_final}
+                ],
+                "temperature": 0.3
+            }
             
             response = requests.post(url, json=payload, headers=headers)
             res_json = response.json()
             
-            if "candidates" in res_json:
-                texto_respuesta = res_json["candidates"][0]["content"]["parts"][0]["text"]
+            if "choices" in res_json:
+                texto_respuesta = res_json["choices"][0]["message"]["content"]
                 return jsonify({"reply": texto_respuesta})
             else:
-                return jsonify({"reply": f"Error en respuesta de API: {str(res_json)}"})
+                return jsonify({"reply": f"Error en respuesta de API OpenAI: {str(res_json)}"})
                 
         except Exception as e:
             return jsonify({"reply": f"Error crítico en el motor cognitivo: {str(e)}"})
     else:
-        return jsonify({"reply": "Error: GEMINI_API_KEY no detectada en las variables de entorno."})
+        return jsonify({"reply": "Error: OPENAI_API_KEY no detectada en las variables de entorno."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
