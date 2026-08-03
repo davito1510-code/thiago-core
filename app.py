@@ -2,7 +2,7 @@
 """
 =============================================================================
  NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL
- Arquitectura de Conectividad Total (Gmail, Google Calendar y Google Drive)
+ Arquitectura de Conectividad Total y Razonamiento Cognitivo Avanzado
  Desarrollado exclusivamente para el Prof. David Villarreal
 =============================================================================
 """
@@ -156,7 +156,6 @@ HTML_TEMPLATE = """
             color: white;
             border-color: #ef4444;
         }
-        
         .working-indicator {
             display: inline-flex;
             align-items: center;
@@ -185,7 +184,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral en línea. Módulos de lectura, escritura y señal visual operativos. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos, de lectura analítica y señal visual operativos. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -203,30 +202,17 @@ HTML_TEMPLATE = """
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
             recognition.lang = 'es-AR';
-            recognition.continuous = true;
-            recognition.interimResults = true;
+            recognition.continuous = false;
+            recognition.interimResults = false;
 
             recognition.onresult = function(event) {
-                let transripcionTemporal = '';
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    transripcionTemporal += event.results[i][0].transcript;
-                }
-                document.getElementById('userInput').value = transripcionTemporal;
-            };
-
-            recognition.onerror = function(event) {
+                const textoTranscrito = event.results[0][0].transcript;
+                document.getElementById('userInput').value = textoTranscrito;
                 detenerEscuchaVisual();
+                enviarMensaje();
             };
-
-            recognition.onend = function() {
-                if (escuchando) {
-                    try {
-                        recognition.start();
-                    } catch (e) {
-                        detenerEscuchaVisual();
-                    }
-                }
-            };
+            recognition.onerror = function() { detenerEscuchaVisual(); };
+            recognition.onend = function() { detenerEscuchaVisual(); };
         }
 
         function alternarEscucha() {
@@ -234,25 +220,19 @@ HTML_TEMPLATE = """
                 alert("Su navegador no soporta reconocimiento de voz nativo.");
                 return;
             }
-            const inputField = document.getElementById('userInput');
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
             if (escuchando) {
-                escuchando = false;
-                try {
-                    recognition.stop();
-                } catch(e) {}
+                try { recognition.stop(); } catch(e) {}
                 detenerEscuchaVisual();
-                if (inputField.value.trim() !== '') {
-                    enviarMensaje();
-                }
             } else {
-                escuchando = true;
-                inputField.value = '';
                 try {
                     recognition.start();
                     document.getElementById('micBtn').classList.add('active');
-                    inputField.placeholder = "Escuchando en curso... (Presione de nuevo para enviar)";
+                    document.getElementById('userInput').placeholder = "Escuchando directiva...";
+                    escuchando = true;
                 } catch (e) {
-                    escuchando = false;
                     detenerEscuchaVisual();
                 }
             }
@@ -275,6 +255,14 @@ HTML_TEMPLATE = """
         }
 
         async function enviarMensaje() {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+            if (escuchando && recognition) {
+                try { recognition.stop(); } catch(e) {}
+                detenerEscuchaVisual();
+            }
+
             const input = document.getElementById('userInput');
             const chatBox = document.getElementById('chatBox');
             const texto = input.value.trim();
@@ -287,7 +275,7 @@ HTML_TEMPLATE = """
             const idCarga = "carga-" + Date.now();
             chatBox.innerHTML += `
                 <div id="${idCarga}" class="message ai-msg" style="display: flex; align-items: center;">
-                    <span>Thiago está ejecutando herramientas en Google Workspace</span>
+                    <span>Thiago está procesando cognitivamente la directiva en Google Workspace</span>
                     <div class="working-indicator">
                         <span></span><span></span><span></span>
                     </div>
@@ -308,7 +296,7 @@ HTML_TEMPLATE = """
                 hablarTexto(data.reply);
             } catch (error) {
                 document.getElementById(idCarga).remove();
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error de comunicación con el núcleo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error crítico de comunicación con el núcleo.</div>`;
             }
         }
 
@@ -380,7 +368,7 @@ def tool_listar_correos():
         if not credenciales.valid:
             credenciales.refresh(Request())
         servicio = build('gmail', 'v1', credentials=credenciales)
-        resultados = servicio.users().messages().list(userId='me', maxResults=3).execute()
+        resultados = servicio.users().messages().list(userId='me', maxResults=5).execute()
         mensajes = resultados.get('messages', [])
         if not mensajes:
             return json.dumps({"resultado": "La bandeja de entrada se encuentra vacía."}, ensure_ascii=False)
@@ -392,8 +380,10 @@ def tool_listar_correos():
             encabezados = payload.get('headers', [])
             asunto = next((h['value'] for h in encabezados if h['name'] == 'Subject'), 'Sin Asunto')
             remitente = next((h['value'] for h in encabezados if h['name'] == 'From'), 'Desconocido')
+            fecha = next((h['value'] for h in encabezados if h['name'] == 'Date'), 'Fecha desconocida')
             cuerpo = extraer_cuerpo_gmail(payload)
             lista_correos.append({
+                "fecha": fecha,
                 "remitente": remitente,
                 "asunto": asunto,
                 "cuerpo_completo": cuerpo
@@ -432,7 +422,7 @@ def tool_consultar_calendario():
         respuesta_eventos = servicio.events().list(
             calendarId='primary',
             timeMin=ahora,
-            maxResults=5,
+            maxResults=10,
             singleEvents=True,
             orderBy='startTime'
         ).execute()
@@ -443,8 +433,10 @@ def tool_consultar_calendario():
         lista_eventos = []
         for evento in eventos:
             inicio = evento['start'].get('dateTime', evento['start'].get('date'))
+            fin = evento['end'].get('dateTime', evento['end'].get('date'))
             titulo = evento.get('summary', 'Sin título')
-            lista_eventos.append({"fecha_inicio": inicio, "evento": titulo})
+            ubicacion = evento.get('location', 'Sin ubicación')
+            lista_eventos.append({"fecha_inicio": inicio, "fecha_fin": fin, "evento": titulo, "ubicacion": ubicacion})
             
         return json.dumps(lista_eventos, ensure_ascii=False)
     except Exception as error:
@@ -537,13 +529,13 @@ def tool_leer_contenido_drive(file_id):
             
             if 'pdf' in tipo_mime.lower():
                 lector_pdf = pypdf.PdfReader(buffer_memoria)
-                for numero_pagina in range(min(5, len(lector_pdf.pages))):
+                for numero_pagina in range(min(10, len(lector_pdf.pages))):
                     pagina_texto = lector_pdf.pages[numero_pagina].extract_text()
                     if pagina_texto:
                         texto_extraido += pagina_texto + "\n"
             elif 'wordprocessingml' in tipo_mime.lower():
                 documento_word = docx.Document(buffer_memoria)
-                for parrafo in documento_word.paragraphs[:50]:
+                for parrafo in documento_word.paragraphs[:100]:
                     texto_extraido += parrafo.text + "\n"
                     
         return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:limite_caracteres]}, ensure_ascii=False)
@@ -567,7 +559,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_listar_correos",
-            "description": "Consulta los últimos correos de Gmail y extrae su cuerpo íntegro."
+            "description": "Consulta los últimos correos de Gmail y extrae su cuerpo íntegro, fecha y remitente."
         }
     },
     {
@@ -647,7 +639,7 @@ openai_tools_definition = [
 ]
 
 # =============================================================================
-# SECCIÓN 7: RUTAS Y CONTROLADORES DE LA APLICACIÓN WEB FLASK
+# SECCIÓN 7: RUTAS Y CONTROLADORES DE LA APLICACIÓN WEB FLASK (LOOP COGNITIVO)
 # =============================================================================
 @app.route("/")
 def index():
@@ -657,8 +649,8 @@ def index():
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """
-    Controlador principal del agente autónomo. Gestiona las peticiones del usuario,
-    ejecuta de forma nativa las llamadas a herramientas (Tool Calling) de OpenAI y devuelve la respuesta final.
+    Controlador principal del agente autónomo con motor cognitivo de multi-razonamiento.
+    Gestiona las peticiones, ejecuta llamadas a herramientas y procesa excepciones con precisión.
     """
     global historial_conversacion
     datos_solicitud = request.get_json() or {}
@@ -680,7 +672,7 @@ def chat():
                 "messages": mensajes_api,
                 "tools": openai_tools_definition,
                 "tool_choice": "auto",
-                "temperature": 0.3
+                "temperature": 0.2
             }
             
             respuesta = requests.post(url_api, json=payload_inicial, headers=cabeceras)
@@ -689,14 +681,21 @@ def chat():
             if "choices" in respuesta_json:
                 mensaje_respuesta = respuesta_json["choices"][0]["message"]
                 
+                # Bucle cognitivo de ejecución de herramientas autónomas
                 if "tool_calls" in mensaje_respuesta:
                     mensajes_api.append(mensaje_respuesta)
                     for llamada_herramienta in mensaje_respuesta["tool_calls"]:
                         nombre_funcion = llamada_herramienta["function"]["name"]
-                        argumentos_funcion = json.loads(llamada_herramienta["function"]["arguments"] or "{}")
+                        try:
+                            argumentos_funcion = json.loads(llamada_herramienta["function"]["arguments"] or "{}")
+                        except Exception:
+                            argumentos_funcion = {}
                         
                         if nombre_funcion in available_tools:
-                            resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
+                            try:
+                                resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
+                            except Exception as tool_err:
+                                resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
                         else:
                             resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo."}, ensure_ascii=False)
                             
@@ -706,28 +705,34 @@ def chat():
                             "content": resultado_ejecucion
                         })
                     
+                    # Segunda iteración cognitiva para que el LLM procese el resultado real de la herramienta
                     payload_seguimiento = {
                         "model": "gpt-4o-mini",
                         "messages": mensajes_api,
-                        "temperature": 0.3
+                        "temperature": 0.2
                     }
                     respuesta_final = requests.post(url_api, json=payload_seguimiento, headers=cabeceras)
                     json_final = respuesta_final.json()
-                    texto_respuesta = json_final["choices"][0]["message"]["content"]
+                    
+                    if "choices" in json_final:
+                        texto_respuesta = json_final["choices"][0]["message"].get("content", "Procesamiento cognitivo completado.")
+                    else:
+                        texto_respuesta = f"Error en el razonamiento final de la herramienta: {str(json_final)}"
                 else:
                     texto_respuesta = mensaje_respuesta.get("content", "Procesamiento de directiva completado.")
 
+                # Actualización controlada de la memoria volátil de sesión
                 historial_conversacion.append({"role": "user", "content": mensaje_usuario})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
-                if len(historial_conversacion) > 10:
-                    historial_conversacion = historial_conversacion[-10:]
+                if len(historial_conversacion) > 12:
+                    historial_conversacion = historial_conversacion[-12:]
                     
                 return jsonify({"reply": texto_respuesta})
             else:
                 return jsonify({"reply": f"Error en la respuesta de OpenAI: {str(respuesta_json)}"})
                 
         except Exception as error_critico:
-            return jsonify({"reply": f"Error crítico del agente autónomo: {str(error_critico)}"})
+            return jsonify({"reply": f"Error crítico del núcleo cognitivo: {str(error_critico)}"})
     else:
         return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno del servidor."})
 
