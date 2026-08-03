@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Agente Autónomo Avanzado con Exploración Global de Drive
+Núcleo Central de Thiago - Agente Autónomo Integrado (Versión Completa y Auditada)
 """
 
 import os
@@ -27,8 +27,10 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "TIENES ACCESO TOTAL Y AUTORIZADO a Gmail (cuerpo íntegro), Google Calendar y Google Drive (con capacidad de búsqueda global en todas las carpetas, ordenadores y subdirectorios). "
-    "Cuando el profesor te pida buscar una carpeta compleja o una ruta específica en Drive, utiliza tus herramientas de búsqueda inteligente para localizar los IDs, explora su contenido y procesa los textos con rigor absoluto."
+    "TIENES ACCESO TOTAL Y AUTORIZADO a Gmail (cuerpo íntegro de correos), Google Calendar (agenda y eventos) "
+    "y Google Drive (búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
+    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene para ejecutar tareas complejas "
+    "como la redacción de planchas masónicas, análisis bibliográficos o gestión institucional."
 )
 
 HTML_TEMPLATE = """
@@ -58,10 +60,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Agente Autónomo Integrado con Búsqueda Global</div>
+        <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Conectividad Total</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral avanzado en línea. Motores de búsqueda global de Drive activos. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral en línea. Módulos de Gmail, Calendar y Drive completamente operativos. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -164,6 +166,7 @@ HTML_TEMPLATE = """
 """
 
 def obtener_credenciales():
+    """Obtiene y refresca las credenciales OAuth de Google."""
     return Credentials(
         token=None,
         refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
@@ -178,167 +181,181 @@ def obtener_credenciales():
     )
 
 def extraer_cuerpo_gmail(payload):
-    body = ""
+    """Extrae de forma recursiva el cuerpo de texto plano de un mensaje de correo electrónico."""
+    cuerpo_texto = ""
     if 'parts' in payload:
-        for part in payload['parts']:
-            if part.get('mimeType') == 'text/plain':
-                data = part.get('body', {}).get('data')
-                if data:
+        for parte in payload['parts']:
+            if parte.get('mimeType') == 'text/plain':
+                datos = parte.get('body', {}).get('data')
+                if datos:
                     try:
-                        body = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                        cuerpo_texto = base64.urlsafe_b64decode(datos).decode('utf-8', errors='ignore')
                         break
-                    except:
+                    except Exception:
                         pass
-            elif 'parts' in part:
-                body = extraer_cuerpo_gmail(part)
-                if body: break
+            elif 'parts' in parte:
+                cuerpo_texto = extraer_cuerpo_gmail(parte)
+                if cuerpo_texto:
+                    break
     elif 'body' in payload and payload['body'].get('data'):
-        data = payload['body']['data']
+        datos = payload['body']['data']
         try:
-            body = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
-        except:
+            cuerpo_texto = base64.urlsafe_b64decode(datos).decode('utf-8', errors='ignore')
+        except Exception:
             pass
-    return body[:4000] if body else "Sin cuerpo de texto legible."
+    return cuerpo_texto[:4000] if cuerpo_texto else "Sin cuerpo de texto legible."
 
-# --- HERRAMIENTAS AUTÓNOMAS AVANZADAS ---
+# --- MÓDULOS DE HERRAMIENTAS AUTÓNOMAS (TOOLS) ---
 
 def tool_listar_correos():
-    """Consulta los últimos correos de Gmail y extrae su cuerpo íntegro."""
+    """Consulta los últimos correos electrónicos en Gmail y extrae su contenido íntegro."""
     try:
-        creds = obtener_credenciales()
-        if not creds.valid: creds.refresh(Request())
-        service = build('gmail', 'v1', credentials=creds)
-        results = service.users().messages().list(userId='me', maxResults=3).execute()
-        messages = results.get('messages', [])
-        if not messages:
-            return json.dumps({"resultado": "Bandeja de entrada vacía."})
+        credenciales = obtener_credenciales()
+        if not credenciales.valid:
+            credenciales.refresh(Request())
+        servicio = build('gmail', 'v1', credentials=credenciales)
+        resultados = servicio.users().messages().list(userId='me', maxResults=3).execute()
+        mensajes = resultados.get('messages', [])
+        if not mensagens:
+            return json.dumps({"resultado": "La bandeja de entrada se encuentra vacía."}, ensure_ascii=False)
         
-        lista = []
-        for m in messages:
-            msg_data = service.users().messages().get(userId='me', id=m['id']).execute()
-            payload = msg_data.get('payload', {})
-            headers = payload.get('headers', [])
-            asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
-            remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
+        lista_correos = []
+        for mensaje in mensagens:
+            detalle = servicio.users().messages().get(userId='me', id=mensaje['id']).execute()
+            payload = detalle.get('payload', {})
+            encabezados = payload.get('headers', [])
+            asunto = next((h['value'] for h in encabezados if h['name'] == 'Subject'), 'Sin Asunto')
+            remitente = next((h['value'] for h in encabezados if h['name'] == 'From'), 'Desconocido')
             cuerpo = extraer_cuerpo_gmail(payload)
-            lista.append({"remitente": remitente, "asunto": asunto, "cuerpo_completo": cuerpo})
-        return json.dumps(lista, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+            lista_correos.append({
+                "remitente": remitente,
+                "asunto": asunto,
+                "cuerpo_completo": cuerpo
+            })
+        return json.dumps(lista_correos, ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({"error": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
-    """Consulta los próximos eventos en Google Calendar."""
+    """Consulta los próximos eventos y citas en Google Calendar."""
     try:
-        creds = obtener_credenciales()
-        if not creds.valid: creds.refresh(Request())
-        service = build('calendar', 'v3', credentials=creds)
-        now = datetime.datetime.utcnow().isoformat() + 'Z'
-        events_result = service.events().list(
-            calendarId='primary', timeMin=now,
-            maxResults=5, singleEvents=True,
+        credenciales = obtener_credenciales()
+        if not credenciales.valid:
+            credenciales.refresh(Request())
+        servicio = build('calendar', 'v3', credentials=credenciales)
+        ahora = datetime.datetime.utcnow().isoformat() + 'Z'
+        respuesta_eventos = servicio.events().list(
+            calendarId='primary',
+            timeMin=ahora,
+            maxResults=5,
+            singleEvents=True,
             orderBy='startTime'
         ).execute()
-        events = events_result.get('items', [])
-        if not events:
-            return json.dumps({"resultado": "No hay eventos próximos en la agenda."})
+        eventos = respuesta_eventos.get('items', [])
+        if not eventos:
+            return json.dumps({"resultado": "No hay eventos próximos registrados en la agenda."}, ensure_ascii=False)
         
         lista_eventos = []
-        for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            summary = event.get('summary', 'Sin título')
-            lista_eventos.append({"fecha_inicio": start, "evento": summary})
+        for evento in eventos:
+            inicio = evento['start'].get('dateTime', evento['start'].get('date'))
+            titulo = evento.get('summary', 'Sin título')
+            lista_eventos.append({"fecha_inicio": inicio, "evento": titulo})
+            
         return json.dumps(lista_eventos, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+    except Exception as error:
+        return json.dumps({"error": str(error)}, ensure_ascii=False)
 
 def tool_buscar_archivos_drive(query=""):
-    """Realiza una búsqueda global e inteligente en todo Google Drive (incluyendo ordenadores sincronizados y subcarpetas)."""
+    """Realiza una búsqueda global e inteligente en Google Drive (incluyendo ordenadores sincronizados)."""
     try:
-        creds = obtener_credenciales()
-        if not creds.valid: creds.refresh(Request())
-        service = build('drive', 'v3', credentials=creds)
+        credenciales = obtener_credenciales()
+        if not credenciales.valid:
+            credenciales.refresh(Request())
+        servicio = build('drive', 'v3', credentials=credenciales)
         
-        # Limpiamos la consulta para extraer términos clave de manera robusta
-        limpieza = query.replace(',', ' ').replace('->', ' ').strip()
-        palabras = [p for p in limpieza.split() if len(p) > 2]
+        consulta_limpia = query.replace(',', ' ').replace('->', ' ').strip()
+        condicion = f"name contains '{consulta_limpia}' and trashed = false" if consulta_limpia else "trashed = false"
         
-        if palabras:
-            # Buscamos por el término más específico (ej. 'BIBLIOGRAFIA' o 'MASONERIA') o por la frase
-            term = palabras[-1]
-            q = f"name contains '{term}' and trashed = false"
-        else:
-            q = f"name contains '{limpieza}' and trashed = false" if limpieza else "trashed = false"
-
-        results = service.files().list(
-            q=q, 
+        resultados = servicio.files().list(
+            q=condicion,
             pageSize=15,
             fields="files(id, name, mimeType, parents)",
             includeItemsFromAllDrives=True,
             supportsAllDrives=True,
             orderBy="modifiedTime desc"
         ).execute()
-        items = results.get('files', [])
-        return json.dumps(items, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+        
+        elementos = resultados.get('files', [])
+        return json.dumps(elementos, ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({"error": str(error)}, ensure_ascii=False)
 
 def tool_listar_contenido_carpeta(folder_id):
-    """Lista todos los archivos y subcarpetas contenidos dentro de una carpeta específica de Drive dado su ID."""
+    """Lista todos los archivos y subcarpetas contenidos en un directorio específico de Drive usando su ID."""
     try:
-        creds = obtener_credenciales()
-        if not creds.valid: creds.refresh(Request())
-        service = build('drive', 'v3', credentials=creds)
+        credenciales = obtener_credenciales()
+        if not credenciales.valid:
+            credenciales.refresh(Request())
+        servicio = build('drive', 'v3', credentials=credenciales)
         
-        q = f"'{folder_id}' in parents and trashed = false"
-        results = service.files().list(
-            q=q,
+        condicion = f"'{folder_id}' in parents and trashed = false"
+        resultados = servicio.files().list(
+            q=condicion,
             pageSize=50,
             fields="files(id, name, mimeType)",
             includeItemsFromAllDrives=True,
             supportsAllDrives=True
         ).execute()
-        items = results.get('files', [])
-        return json.dumps(items, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+        
+        elementos = resultados.get('files', [])
+        return json.dumps(elementos, ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({"error": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el texto interno de un archivo específico de Drive (PDF, Word o Doc) dado su ID."""
+    """Extrae el texto interno de un archivo de Drive (PDF, Word o Google Doc) dado su ID."""
     try:
-        creds = obtener_credenciales()
-        if not creds.valid: creds.refresh(Request())
-        service = build('drive', 'v3', credentials=creds)
-        file_meta = service.files().get(fileId=file_id, fields="name, mimeType").execute()
-        nombre = file_meta.get('name')
-        mime_type = file_meta.get('mimeType')
+        credenciales = obtener_credenciales()
+        if not credenciales.valid:
+            credenciales.refresh(Request())
+        servicio = build('drive', 'v3', credentials=credenciales)
         
-        limite = 8000
-        if 'application/vnd.google-apps.document' in mime_type:
-            req = service.files().export_media(fileId=file_id, mimeType='text/plain')
-            contenido = req.execute().decode('utf-8')
-            return json.dumps({"archivo": nombre, "contenido": contenido[:limite]}, ensure_ascii=False)
+        metadatos = servicio.files().get(fileId=file_id, fields="name, mimeType").execute()
+        nombre_archivo = metadatos.get('name')
+        tipo_mime = metadatos.get('mimeType')
+        
+        limite_caracteres = 8000
+        texto_extraido = ""
+        
+        if 'application/vnd.google-apps.document' in tipo_mime:
+            solicitud = servicio.files().export_media(fileId=file_id, mimeType='text/plain')
+            contenido_bytes = solicitud.execute()
+            texto_extraido = contenido_bytes.decode('utf-8', errors='ignore')
         else:
-            req = service.files().get_media(fileId=file_id)
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, req)
-            done = False
-            while done is False:
-                _, done = downloader.next_chunk()
-            fh.seek(0)
-            texto = ""
-            if 'pdf' in mime_type.lower():
-                lector = pypdf.PdfReader(fh)
-                for i in range(min(5, len(lector.pages))):
-                    p_txt = lector.pages[i].extract_text()
-                    if p_txt: texto += p_txt + "\n"
-            elif 'wordprocessingml' in mime_type.lower():
-                doc = docx.Document(fh)
-                for para in doc.paragraphs[:50]:
-                    texto += para.text + "\n"
-            return json.dumps({"archivo": nombre, "contenido": texto[:limite]}, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+            solicitud = servicio.files().get_media(fileId=file_id)
+            buffer_memoria = io.BytesIO()
+            descargador = MediaIoBaseDownload(buffer_memoria, solicitud)
+            terminado = False
+            while not terminado:
+                _, terminado = descargador.next_chunk()
+            buffer_memoria.seek(0)
+            
+            if 'pdf' in tipo_mime.lower():
+                lector_pdf = pypdf.PdfReader(buffer_memoria)
+                for numero_pagina in range(min(5, len(lector_pdf.pages))):
+                    pagina_texto = lector_pdf.pages[numero_pagina].extract_text()
+                    if pagina_texto:
+                        texto_extraido += pagina_texto + "\n"
+            elif 'wordprocessingml' in tipo_mime.lower():
+                documento_word = docx.Document(buffer_memoria)
+                for parrafo in documento_word.paragraphs[:50]:
+                    texto_extraido += parrafo.text + "\n"
+                    
+        return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:limite_caracteres]}, ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({"error": str(error)}, ensure_ascii=False)
 
+# Mapeo formal de funciones disponibles para el agente
 available_tools = {
     "tool_listar_correos": tool_listar_correos,
     "tool_consultar_calendario": tool_consultar_calendario,
@@ -359,18 +376,18 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_consultar_calendario",
-            "description": "Consulta los próximos eventos y citas en Google Calendar."
+            "description": "Consulta los próximos eventos y citas registrados en Google Calendar."
         }
     },
     {
         "type": "function",
         "function": {
             "name": "tool_buscar_archivos_drive",
-            "description": "Realiza una búsqueda global en todo Google Drive (incluyendo ordenadores sincronizados) para encontrar carpetas o archivos y obtener sus IDs.",
+            "description": "Realiza una búsqueda global en Google Drive (incluyendo ordenadores sincronizados) para encontrar carpetas o archivos.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Término o ruta de búsqueda (ej. 'BIBLIOGRAFIA' o 'COMPAÑERO')."}
+                    "query": {"type": "string", "description": "Término de búsqueda, palabra clave o nombre de carpeta (ej. 'BIBLIOGRAFIA')."}
                 },
                 "required": []
             }
@@ -380,11 +397,11 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_listar_contenido_carpeta",
-            "description": "Lista todos los archivos y subcarpetas dentro de una carpeta específica usando su ID de Drive.",
+            "description": "Lista todos los archivos y subcarpetas dentro de una carpeta específica de Drive utilizando su ID único.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "folder_id": {"type": "string", "description": "El ID único de la carpeta en Google Drive."}
+                    "folder_id": {"type": "string", "description": "El identificador único (ID) de la carpeta en Google Drive."}
                 },
                 "required": ["folder_id"]
             }
@@ -394,11 +411,11 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto interno de un archivo de Drive usando su ID para análisis.",
+            "description": "Extrae el texto interno de un archivo específico de Drive (PDF, Word o Doc) dado su ID para su análisis.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_id": {"type": "string", "description": "El ID del archivo en Google Drive."}
+                    "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive."}
                 },
                 "required": ["file_id"]
             }
@@ -413,21 +430,21 @@ def index():
 @app.route("/api/chat", methods=["POST"])
 def chat():
     global historial_conversacion
-    data = request.get_json() or {}
-    msg = data.get("message", "").strip()
-    if not msg:
+    datos_solicitud = request.get_json() or {}
+    mensaje_usuario = datos_solicitud.get("message", "").strip()
+    if not mensaje_usuario:
         return jsonify({"reply": "Indique una directiva válida."})
 
     if OPENAI_API_KEY:
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
             mensajes_api.extend(historial_conversacion)
-            mensajes_api.append({"role": "user", "content": msg})
+            mensajes_api.append({"role": "user", "content": mensaje_usuario})
 
-            url = "https://api.openai.com/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+            url_api = "https://api.openai.com/v1/chat/completions"
+            cabeceras = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
             
-            payload = {
+            payload_inicial = {
                 "model": "gpt-4o-mini",
                 "messages": mensajes_api,
                 "tools": openai_tools_definition,
@@ -435,27 +452,27 @@ def chat():
                 "temperature": 0.3
             }
             
-            response = requests.post(url, json=payload, headers=headers)
-            res_json = response.json()
+            respuesta = requests.post(url_api, json=payload_inicial, headers=cabeceras)
+            respuesta_json = respuesta.json()
             
-            if "choices" in res_json:
-                message_resp = res_json["choices"][0]["message"]
+            if "choices" in respuesta_json:
+                mensaje_respuesta = respuesta_json["choices"][0]["message"]
                 
-                if "tool_calls" in message_resp:
-                    mensajes_api.append(message_resp)
-                    for tool_call in message_resp["tool_calls"]:
-                        func_name = tool_call["function"]["name"]
-                        func_args = json.loads(tool_call["function"]["arguments"] or "{}")
+                if "tool_calls" in mensaje_respuesta:
+                    mensajes_api.append(mensaje_respuesta)
+                    for llamada_herramienta in mensaje_respuesta["tool_calls"]:
+                        nombre_funcion = llamada_herramienta["function"]["name"]
+                        argumentos_funcion = json.loads(llamada_herramienta["function"]["arguments"] or "{}")
                         
-                        if func_name in available_tools:
-                            tool_result = available_tools[func_name](**func_args)
+                        if nombre_funcion in available_tools:
+                            resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
                         else:
-                            tool_result = json.dumps({"error": "Herramienta no encontrada"})
+                            resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo."}, ensure_ascii=False)
                             
                         mensajes_api.append({
                             "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "content": tool_result
+                            "tool_call_id": llamada_herramienta["id"],
+                            "content": resultado_ejecucion
                         })
                     
                     payload_seguimiento = {
@@ -463,25 +480,25 @@ def chat():
                         "messages": mensajes_api,
                         "temperature": 0.3
                     }
-                    resp_final = requests.post(url, json=payload_seguimiento, headers=headers)
-                    json_final = resp_final.json()
+                    respuesta_final = requests.post(url_api, json=payload_seguimiento, headers=cabeceras)
+                    json_final = respuesta_final.json()
                     texto_respuesta = json_final["choices"][0]["message"]["content"]
                 else:
-                    texto_respuesta = message_resp.get("content", "Procesamiento completado.")
+                    texto_respuesta = mensaje_respuesta.get("content", "Procesamiento de directiva completado.")
 
-                historial_conversacion.append({"role": "user", "content": msg})
+                historial_conversacion.append({"role": "user", "content": mensaje_usuario})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
                 if len(historial_conversacion) > 10:
                     historial_conversacion = historial_conversacion[-10:]
                     
                 return jsonify({"reply": texto_respuesta})
             else:
-                return jsonify({"reply": f"Error OpenAI: {str(res_json)}"})
+                return jsonify({"reply": f"Error en la respuesta de OpenAI: {str(respuesta_json)}"})
                 
-        except Exception as e:
-            return jsonify({"reply": f"Error crítico del agente: {str(e)}"})
+        except Exception as error_critico:
+            return jsonify({"reply": f"Error crítico del agente autónomo: {str(error_critico)}"})
     else:
-        return jsonify({"reply": "Falta OPENAI_API_KEY."})
+        return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
