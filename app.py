@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Agente Autónomo Integrado (Versión Exhaustiva e Íntegra)
+Núcleo Central de Thiago - Agente Autónomo Bidireccional (Lectura y Escritura Completa)
 Profesor David Villarreal — Arquitectura de Conectividad Total (Gmail, Calendar y Drive)
-Desarrollado bajo estrictas normas de auditoría de código y transparencia técnica.
 """
 
 import os
@@ -11,6 +10,7 @@ import json
 import io
 import base64
 import requests
+from email.mime.text import MIMEText
 from flask import Flask, render_template_string, request, jsonify
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -24,10 +24,10 @@ import docx
 # ==========================================
 app = Flask(__name__)
 
-# Recuperación de la clave secreta de la API de OpenAI desde el entorno del servidor
+# Recuperación de la clave secreta de OpenAI desde el entorno seguro de Render
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Memoria de sesión temporal para almacenar el historial de la conversación del agente
+# Memoria de sesión temporal para el historial conversacional del agente
 historial_conversacion = []
 
 # ==========================================
@@ -38,10 +38,11 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber encontrado un archivo o correo si la herramienta devuelve un resultado vacío. "
-    "Tienes acceso total y autorizado a Gmail (cuerpo íntegro de correos), Google Calendar (agenda y eventos) "
-    "y Google Drive (búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
-    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene para ejecutar tareas complejas."
+    "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción (como crear un evento o enviar un mail) "
+    "si la herramienta no ha sido llamada y su respuesta no ha sido exitosa. "
+    "Tienes acceso total y autorizado a Gmail (lectura y envío de correos), Google Calendar (lectura y creación de eventos) "
+    "y Google Drive (búsqueda global y lectura analítica de textos). "
+    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene."
 )
 
 # ==========================================
@@ -53,7 +54,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago - Agente Autónomo</title>
+    <title>Núcleo Central de Thiago - Agente Autónomo Bidireccional</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -70,7 +71,7 @@ HTML_TEMPLATE = """
         #micBtn { background-color: #334155; color: #38bdf8; border: 1px solid #38bdf8; }
         #micBtn.active { background-color: #ef4444; color: white; border-color: #ef4444; }
         
-        /* Estilos detallados para la señal visual de trabajo (puntos pulsantes animados en tiempo real) */
+        /* Señal visual de trabajo en tiempo real (puntos pulsantes animados) */
         .working-indicator { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; }
         .working-indicator span {
             height: 7px; width: 7px; background-color: #38bdf8; border-radius: 50%;
@@ -87,10 +88,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Conectividad Total</div>
+        <div class="subtitle">Prof. David Villarreal — Agente Bidireccional con Conectividad Total</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral en línea. Módulos de Gmail, Calendar y Drive operativos con señal visual de actividad. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral en línea. Módulos de lectura y escritura habilitados. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -162,11 +163,11 @@ HTML_TEMPLATE = """
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Inyección explícita del indicador visual dinámico de trabajo en tiempo real
+            // Inyección explícita del indicador visual dinámico de trabajo
             const idCarga = "carga-" + Date.now();
             chatBox.innerHTML += `
                 <div id="${idCarga}" class="message ai-msg" style="display: flex; align-items: center;">
-                    <span>Thiago está consultando las herramientas de Google Workspace</span>
+                    <span>Thiago está ejecutando herramientas en Google Workspace</span>
                     <div class="working-indicator">
                         <span></span><span></span><span></span>
                     </div>
@@ -200,10 +201,10 @@ HTML_TEMPLATE = """
 """
 
 # ==========================================
-# FUNCIONES DE AUTENTICACIÓN Y CONECTIVIDAD GOOGLE
+# CREDENCIALES OAUTH CON PERMISOS AMPLIADOS
 # ==========================================
 def obtener_credenciales():
-    """Obtiene y refresca las credenciales OAuth de Google de manera explícita y segura."""
+    """Obtiene y refresca las credenciales OAuth de Google con permisos completos de lectura y escritura."""
     return Credentials(
         token=None,
         refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
@@ -212,13 +213,14 @@ def obtener_credenciales():
         client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
         scopes=[
             'https://www.googleapis.com/auth/gmail.readonly',
-            'https://www.googleapis.com/auth/calendar.readonly',
+            'https://www.googleapis.com/auth/gmail.send',
+            'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/drive.readonly'
         ]
     )
 
 def extraer_cuerpo_gmail(payload):
-    """Extrae de forma recursiva y limpia el cuerpo de texto plano de un mensaje de correo electrónico."""
+    """Extrae de forma recursiva el cuerpo de texto plano de un mensaje de correo."""
     cuerpo_texto = ""
     if 'parts' in payload:
         for parte in payload['parts']:
@@ -243,187 +245,158 @@ def extraer_cuerpo_gmail(payload):
     return cuerpo_texto[:4000] if cuerpo_texto else "Sin cuerpo de texto legible."
 
 # ==========================================
-# HERRAMIENTAS AUTÓNOMAS (TOOLS)
+# HERRAMIENTAS AUTÓNOMAS (LECTURA Y ESCRITURA)
 # ==========================================
 def tool_listar_correos():
-    """Consulta los últimos correos electrónicos en Gmail y extrae su contenido íntegro."""
+    """Consulta los últimos correos electrónicos en Gmail."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
+        if not credenciales.valid: credenciales.refresh(Request())
         servicio = build('gmail', 'v1', credentials=credenciales)
         resultados = servicio.users().messages().list(userId='me', maxResults=3).execute()
         mensajes = resultados.get('messages', [])
-        if not mensajes:
-            return json.dumps({"resultado": "La bandeja de entrada se encuentra vacía."}, ensure_ascii=False)
+        if not mensajes: return json.dumps({"resultado": "Bandeja vacía."}, ensure_ascii=False)
         
-        lista_correos = []
-        for mensaje in mensajes:
-            detalle = servicio.users().messages().get(userId='me', id=mensaje['id']).execute()
-            payload = detalle.get('payload', {})
-            encabezados = payload.get('headers', [])
-            asunto = next((h['value'] for h in encabezados if h['name'] == 'Subject'), 'Sin Asunto')
-            remitente = next((h['value'] for h in encabezados if h['name'] == 'From'), 'Desconocido')
+        lista = []
+        for m in mensajes:
+            detalles = servicio.users().messages().get(userId='me', id=m['id']).execute()
+            payload = detalles.get('payload', {})
+            headers = payload.get('headers', [])
+            asunto = next((h['value'] for h in headers if h['name'] == 'Subject'), 'Sin Asunto')
+            remitente = next((h['value'] for h in headers if h['name'] == 'From'), 'Desconocido')
             cuerpo = extraer_cuerpo_gmail(payload)
-            lista_correos.append({
-                "remitente": remitente,
-                "asunto": asunto,
-                "cuerpo_completo": cuerpo
-            })
-        return json.dumps(lista_correos, ensure_ascii=False)
-    except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+            lista.append({"remitente": remitente, "asunto": asunto, "cuerpo_completo": cuerpo})
+        return json.dumps(lista, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+def tool_enviar_correo(destinatario, asunto, cuerpo):
+    """Envía un correo electrónico real a través de Gmail."""
+    try:
+        credenciales = obtener_credenciales()
+        if not credenciales.valid: credenciales.refresh(Request())
+        servicio = build('gmail', 'v1', credentials=credenciales)
+        
+        mensaje = MIMEText(cuerpo)
+        mensaje['to'] = destinatario
+        mensaje['subject'] = asunto
+        raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')
+        
+        cuerpo_solicitud = {'raw': raw_message}
+        enviado = servicio.users().messages().send(userId='me', body=cuerpo_solicitud).execute()
+        return json.dumps({"resultado": "Correo enviado con éxito", "id_mensaje": enviado.get('id')}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
-    """Consulta los próximos eventos y citas registrados en Google Calendar."""
+    """Consulta los próximos eventos en Google Calendar."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
+        if not credenciales.valid: credenciales.refresh(Request())
         servicio = build('calendar', 'v3', credentials=credenciales)
         ahora = datetime.datetime.utcnow().isoformat() + 'Z'
-        respuesta_eventos = servicio.events().list(
-            calendarId='primary',
-            timeMin=ahora,
-            maxResults=5,
-            singleEvents=True,
-            orderBy='startTime'
+        respuesta = servicio.events().list(
+            calendarId='primary', timeMin=ahora, maxResults=5, singleEvents=True, orderBy='startTime'
         ).execute()
-        eventos = respuesta_eventos.get('items', [])
-        if not eventos:
-            return json.dumps({"resultado": "No hay eventos próximos registrados en la agenda."}, ensure_ascii=False)
+        eventos = respuesta.get('items', [])
+        if not eventos: return json.dumps({"resultado": "Sin eventos próximos."}, ensure_ascii=False)
         
-        lista_eventos = []
-        for evento in eventos:
-            inicio = evento['start'].get('dateTime', evento['start'].get('date'))
-            titulo = evento.get('summary', 'Sin título')
-            lista_eventos.append({"fecha_inicio": inicio, "evento": titulo})
-            
-        return json.dumps(lista_eventos, ensure_ascii=False)
-    except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+        lista = [{"fecha_inicio": e['start'].get('dateTime', e['start'].get('date')), "evento": e.get('summary', 'Sin título')} for e in eventos]
+        return json.dumps(lista, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
-def tool_buscar_archivos_drive(query=""):
-    """Realiza una búsqueda global e inteligente en Google Drive (incluyendo ordenadores sincronizados)."""
+def tool_crear_evento_calendario(summary, start_time, end_time, location="", description=""):
+    """Crea un evento real en Google Calendar."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
+        if not credenciales.valid: credenciales.refresh(Request())
+        servicio = build('calendar', 'v3', credentials=credenciales)
+        
+        evento = {
+            'summary': summary,
+            'location': location,
+            'description': description,
+            'start': {'dateTime': start_time, 'timeZone': 'America/Argentina/Buenos_Aires'},
+            'end': {'dateTime': end_time, 'timeZone': 'America/Argentina/Buenos_Aires'},
+        }
+        
+        creado = servicio.events().insert(calendarId='primary', body=evento).execute()
+        return json.dumps({"resultado": "Evento creado exitosamente en el calendario", "link": creado.get('htmlLink')}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+def tool_buscar_archivos_drive(query=""):
+    """Busca archivos o carpetas en Google Drive."""
+    try:
+        credenciales = obtener_credenciales()
+        if not credenciales.valid: credenciales.refresh(Request())
         servicio = build('drive', 'v3', credentials=credenciales)
         
-        consulta_limpia = query.strip()
-        condicion = f"name contains '{consulta_limpia}' and trashed = false" if consulta_limpia else "trashed = false"
-        
+        limpio = query.strip()
+        condicion = f"name contains '{limpio}' and trashed = false" if limpio else "trashed = false"
         resultados = servicio.files().list(
-            q=condicion,
-            pageSize=25,
-            fields="files(id, name, mimeType, parents)",
-            includeItemsFromAllDrives=True,
-            supportsAllDrives=True,
-            orderBy="modifiedTime desc"
+            q=condicion, pageSize=25, fields="files(id, name, mimeType, parents)",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, orderBy="modifiedTime desc"
         ).execute()
         
         elementos = resultados.get('files', [])
-        if not elementos:
-            return json.dumps({"resultado": f"No se encontró ningún archivo o carpeta con el término '{consulta_limpia}' en Google Drive."}, ensure_ascii=False)
+        if not elementos: return json.dumps({"resultado": f"No se encontró '{limpio}' en Drive."}, ensure_ascii=False)
         return json.dumps(elementos, ensure_ascii=False)
-    except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el texto interno de un archivo específico de Drive (PDF, Word o Google Doc) dado su ID."""
+    """Extrae el texto de un archivo en Drive."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
+        if not credenciales.valid: credenciales.refresh(Request())
         servicio = build('drive', 'v3', credentials=credenciales)
         
-        metadatos = servicio.files().get(fileId=file_id, fields="name, mimeType").execute()
-        nombre_archivo = metadatos.get('name')
-        tipo_mime = metadatos.get('mimeType')
+        meta = servicio.files().get(fileId=file_id, fields="name, mimeType").execute()
+        nombre = meta.get('name')
+        tipo = meta.get('mimeType')
         
-        limite_caracteres = 8000
-        texto_extraido = ""
-        
-        if 'application/vnd.google-apps.document' in tipo_mime:
-            solicitud = servicio.files().export_media(fileId=file_id, mimeType='text/plain')
-            contenido_bytes = solicitud.execute()
-            texto_extraido = contenido_bytes.decode('utf-8', errors='ignore')
+        texto = ""
+        if 'application/vnd.google-apps.document' in tipo:
+            req = servicio.files().export_media(fileId=file_id, mimeType='text/plain')
+            texto = req.execute().decode('utf-8', errors='ignore')[:8000]
         else:
-            solicitud = servicio.files().get_media(fileId=file_id)
-            buffer_memoria = io.BytesIO()
-            descargador = MediaIoBaseDownload(buffer_memoria, solicitud)
-            terminado = False
-            while not terminado:
-                _, terminado = descargador.next_chunk()
-            buffer_memoria.seek(0)
-            
-            if 'pdf' in tipo_mime.lower():
-                lector_pdf = pypdf.PdfReader(buffer_memoria)
-                for numero_pagina in range(min(5, len(lector_pdf.pages))):
-                    pagina_texto = lector_pdf.pages[numero_pagina].extract_text()
-                    if pagina_texto:
-                        texto_extraido += pagina_texto + "\n"
-            elif 'wordprocessingml' in tipo_mime.lower():
-                documento_word = docx.Document(buffer_memoria)
-                for parrafo in documento_word.paragraphs[:50]:
-                    texto_extraido += parrafo.text + "\n"
-                    
-        return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:limite_caracteres]}, ensure_ascii=False)
-    except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+            req = servicio.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, req)
+            done = False
+            while not done: _, done = downloader.next_chunk()
+            fh.seek(0)
+            if 'pdf' in tipo.lower():
+                lector = pypdf.PdfReader(fh)
+                for i in range(min(5, len(lector.pages))):
+                    p = lector.pages[i].extract_text()
+                    if p: texto += p + "\n"
+            elif 'wordprocessingml' in tipo.lower():
+                doc = docx.Document(fh)
+                for para in doc.paragraphs[:50]: texto += para.text + "\n"
+        return json.dumps({"archivo": nombre, "contenido": texto[:8000]}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
-# Mapeo formal de funciones disponibles para el agente
+# Mapeo de herramientas disponibles para el agente
 available_tools = {
     "tool_listar_correos": tool_listar_correos,
+    "tool_enviar_correo": tool_enviar_correo,
     "tool_consultar_calendario": tool_consultar_calendario,
+    "tool_crear_evento_calendario": tool_crear_evento_calendario,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
     "tool_leer_contenido_drive": tool_leer_contenido_drive
 }
 
 openai_tools_definition = [
-    {
-        "type": "function",
-        "function": {
-            "name": "tool_listar_correos",
-            "description": "Consulta los últimos correos de Gmail y extrae su cuerpo íntegro."
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "tool_consultar_calendario",
-            "description": "Consulta los próximos eventos y citas registrados en Google Calendar."
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "tool_buscar_archivos_drive",
-            "description": "Busca directamente cualquier archivo o carpeta en Google Drive por nombre (ej. 'BIBLIOGRAFIA', 'COMPAÑERO' o 'MASONERIA').",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Término de búsqueda o palabra clave."}
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto interno de un archivo específico de Drive (PDF, Word o Doc) dado su ID único.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive."}
-                },
-                "required": ["file_id"]
-            }
-        }
-    }
+    {"type": "function", "function": {"name": "tool_listar_correos", "description": "Consulta correos de Gmail."}},
+    {"type": "function", "function": {"name": "tool_enviar_correo", "description": "Envía un correo electrónico por Gmail.", "parameters": {"type": "object", "properties": {"destinatario": {"type": "string"}, "asunto": {"type": "string"}, "cuerpo": {"type": "string"}}, "required": ["destinatario", "asunto", "cuerpo"]}}},
+    {"type": "function", "function": {"name": "tool_consultar_calendario", "description": "Consulta Google Calendar."}},
+    {"type": "function", "function": {"name": "tool_crear_evento_calendario", "description": "Crea un evento en Google Calendar.", "parameters": {"type": "object", "properties": {"summary": {"type": "string"}, "start_time": {"type": "string", "description": "Formato ISO (ej. 2026-08-07T15:00:00-03:00)"}, "end_time": {"type": "string", "description": "Formato ISO (ej. 2026-08-07T17:00:00-03:00)"}, "location": {"type": "string"}, "description": {"type": "string"}}, "required": ["summary", "start_time", "end_time"]}}},
+    {"type": "function", "function": {"name": "tool_buscar_archivos_drive", "description": "Busca archivos o carpetas en Google Drive.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": []}}},
+    {"type": "function", "function": {"name": "tool_leer_contenido_drive", "description": "Extrae el texto de un archivo en Drive usando su ID.", "parameters": {"type": "object", "properties": {"file_id": {"type": "string"}}, "required": ["file_id"]}}}
 ]
 
 # ==========================================
@@ -436,21 +409,20 @@ def index():
 @app.route("/api/chat", methods=["POST"])
 def chat():
     global historial_conversacion
-    datos_solicitud = request.get_json() or {}
-    mensaje_usuario = datos_solicitud.get("message", "").strip()
-    if not mensaje_usuario:
-        return jsonify({"reply": "Indique una directiva válida."})
+    datos = request.get_json() or {}
+    msg = datos.get("message", "").strip()
+    if not msg: return jsonify({"reply": "Indique una directiva válida."})
 
     if OPENAI_API_KEY:
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
             mensajes_api.extend(historial_conversacion)
-            mensajes_api.append({"role": "user", "content": mensaje_usuario})
+            mensajes_api.append({"role": "user", "content": msg})
 
-            url_api = "https://api.openai.com/v1/chat/completions"
-            cabeceras = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
             
-            payload_inicial = {
+            payload = {
                 "model": "gpt-4o-mini",
                 "messages": mensajes_api,
                 "tools": openai_tools_definition,
@@ -458,27 +430,27 @@ def chat():
                 "temperature": 0.3
             }
             
-            respuesta = requests.post(url_api, json=payload_inicial, headers=cabeceras)
-            respuesta_json = respuesta.json()
+            response = requests.post(url, json=payload, headers=headers)
+            res_json = response.json()
             
-            if "choices" in respuesta_json:
-                mensaje_respuesta = respuesta_json["choices"][0]["message"]
+            if "choices" in res_json:
+                message_resp = res_json["choices"][0]["message"]
                 
-                if "tool_calls" in mensaje_respuesta:
-                    mensajes_api.append(mensaje_respuesta)
-                    for llamada_herramienta in mensaje_respuesta["tool_calls"]:
-                        nombre_funcion = llamada_herramienta["function"]["name"]
-                        argumentos_funcion = json.loads(llamada_herramienta["function"]["arguments"] or "{}")
+                if "tool_calls" in message_resp:
+                    mensajes_api.append(message_resp)
+                    for tool_call in message_resp["tool_calls"]:
+                        func_name = tool_call["function"]["name"]
+                        func_args = json.loads(tool_call["function"]["arguments"] or "{}")
                         
-                        if nombre_funcion in available_tools:
-                            resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
+                        if func_name in available_tools:
+                            tool_result = available_tools[func_name](**func_args)
                         else:
-                            resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo."}, ensure_ascii=False)
+                            tool_result = json.dumps({"error": "Herramienta no encontrada"}, ensure_ascii=False)
                             
                         mensajes_api.append({
                             "role": "tool",
-                            "tool_call_id": llamada_herramienta["id"],
-                            "content": resultado_ejecucion
+                            "tool_call_id": tool_call["id"],
+                            "content": tool_result
                         })
                     
                     payload_seguimiento = {
@@ -486,25 +458,24 @@ def chat():
                         "messages": mensajes_api,
                         "temperature": 0.3
                     }
-                    respuesta_final = requests.post(url_api, json=payload_seguimiento, headers=cabeceras)
-                    json_final = respuesta_final.json()
+                    resp_final = requests.post(url, json=payload_seguimiento, headers=headers)
+                    json_final = resp_final.json()
                     texto_respuesta = json_final["choices"][0]["message"]["content"]
                 else:
-                    texto_respuesta = mensaje_respuesta.get("content", "Procesamiento de directiva completado.")
+                    texto_respuesta = message_resp.get("content", "Procesamiento completado.")
 
-                historial_conversacion.append({"role": "user", "content": mensaje_usuario})
+                historial_conversacion.append({"role": "user", "content": msg})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
                 if len(historial_conversacion) > 10:
                     historial_conversacion = historial_conversacion[-10:]
                     
                 return jsonify({"reply": texto_respuesta})
             else:
-                return jsonify({"reply": f"Error en la respuesta de OpenAI: {str(respuesta_json)}"})
-                
-        except Exception as error_critico:
-            return jsonify({"reply": f"Error crítico del agente autónomo: {str(error_critico)}"})
+                return jsonify({"reply": f"Error OpenAI: {str(res_json)}"})
+        except Exception as e:
+            return jsonify({"reply": f"Error crítico del agente: {str(e)}"})
     else:
-        return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno."})
+        return jsonify({"reply": "Falta OPENAI_API_KEY."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
