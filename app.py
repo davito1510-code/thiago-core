@@ -709,7 +709,7 @@ def chat():
     datos_solicitud = request.get_json() or {}
     mensaje_usuario = datos_solicitud.get("message", "").strip()
     if not mensaje_usuario:
-        return jsonify({"reply": "Indique una directiva válida."})
+        return jsonify({"reply": "Indique una directiva operativa válida."})
 
     if OPENAI_API_KEY:
         try:
@@ -725,7 +725,7 @@ def chat():
                 "messages": mensajes_api,
                 "tools": openai_tools_definition,
                 "tool_choice": "auto",
-                "temperature": 0.2
+                "temperature": 0.1
             }
             
             respuesta = requests.post(url_api, json=payload_inicial, headers=cabeceras)
@@ -751,7 +751,7 @@ def chat():
                                 print(f"[ERROR EN EJECUCIÓN DE TOOL {nombre_funcion}]: {repr(tool_err)}")
                                 resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
                         else:
-                            resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo."}, ensure_ascii=False)
+                            resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo operativo."}, ensure_ascii=False)
                             
                         mensajes_api.append({
                             "role": "tool",
@@ -759,21 +759,21 @@ def chat():
                             "content": resultado_ejecucion
                         })
                     
-                    # Segunda iteración cognitiva para procesar el resultado de la herramienta
+                    # Segunda iteración cognitiva para consolidar la respuesta operativa
                     payload_seguimiento = {
                         "model": "gpt-4o-mini",
                         "messages": mensajes_api,
-                        "temperature": 0.2
+                        "temperature": 0.1
                     }
                     respuesta_final = requests.post(url_api, json=payload_seguimiento, headers=cabeceras)
                     json_final = respuesta_final.json()
                     
                     if "choices" in json_final:
-                        texto_respuesta = json_final["choices"][0]["message"].get("content", "Procesamiento cognitivo completado.")
+                        texto_respuesta = json_final["choices"][0]["message"].get("content", "Ejecución operativa completada con éxito.")
                     else:
-                        texto_respuesta = f"Error en el razonamiento final de la herramienta: {str(json_final)}"
+                        texto_respuesta = f"Error en la consolidación operativa: {str(json_final)}"
                 else:
-                    texto_respuesta = mensaje_respuesta.get("content", "Procesamiento de directiva completado.")
+                    texto_respuesta = mensaje_respuesta.get("content", "Directiva procesada.")
 
                 historial_conversacion.append({"role": "user", "content": mensaje_usuario})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
@@ -782,11 +782,11 @@ def chat():
                     
                 return jsonify({"reply": texto_respuesta})
             else:
-                return jsonify({"reply": f"Error en la respuesta de OpenAI: {str(respuesta_json)}"})
+                return jsonify({"reply": f"Error en la respuesta del motor cognitivo: {str(respuesta_json)}"})
                 
         except Exception as error_critico:
             print(f"[ERROR CRÍTICO CHAT GENERAL]: {repr(error_critico)}")
-            return jsonify({"reply": f"Error crítico del núcleo cognitivo: {str(error_critico)}"})
+            return jsonify({"reply": f"Error crítico en el núcleo operativo: {str(error_critico)}"})
     else:
         return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno del servidor."})
 
