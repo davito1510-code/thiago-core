@@ -157,7 +157,6 @@ HTML_TEMPLATE = """
             border-color: #ef4444;
         }
         
-        /* Indicador visual animado de actividad en tiempo real */
         .working-indicator {
             display: inline-flex;
             align-items: center;
@@ -204,17 +203,30 @@ HTML_TEMPLATE = """
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
             recognition.lang = 'es-AR';
-            recognition.continuous = false;
-            recognition.interimResults = false;
+            recognition.continuous = true;
+            recognition.interimResults = true;
 
             recognition.onresult = function(event) {
-                const textoTranscrito = event.results[0][0].transcript;
-                document.getElementById('userInput').value = textoTranscrito;
-                detenerEscuchaVisual();
-                enviarMensaje();
+                let transripcionTemporal = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    transripcionTemporal += event.results[i][0].transcript;
+                }
+                document.getElementById('userInput').value = transripcionTemporal;
             };
-            recognition.onerror = function() { detenerEscuchaVisual(); };
-            recognition.onend = function() { detenerEscuchaVisual(); };
+
+            recognition.onerror = function(event) {
+                detenerEscuchaVisual();
+            };
+
+            recognition.onend = function() {
+                if (escuchando) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        detenerEscuchaVisual();
+                    }
+                }
+            };
         }
 
         function alternarEscucha() {
@@ -222,13 +234,27 @@ HTML_TEMPLATE = """
                 alert("Su navegador no soporta reconocimiento de voz nativo.");
                 return;
             }
+            const inputField = document.getElementById('userInput');
             if (escuchando) {
-                recognition.stop();
+                escuchando = false;
+                try {
+                    recognition.stop();
+                } catch(e) {}
+                detenerEscuchaVisual();
+                if (inputField.value.trim() !== '') {
+                    enviarMensaje();
+                }
             } else {
-                recognition.start();
-                document.getElementById('micBtn').classList.add('active');
-                document.getElementById('userInput').placeholder = "Escuchando...";
                 escuchando = true;
+                inputField.value = '';
+                try {
+                    recognition.start();
+                    document.getElementById('micBtn').classList.add('active');
+                    inputField.placeholder = "Escuchando en curso... (Presione de nuevo para enviar)";
+                } catch (e) {
+                    escuchando = false;
+                    detenerEscuchaVisual();
+                }
             }
         }
 
@@ -258,7 +284,6 @@ HTML_TEMPLATE = """
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Inyección explícita del indicador visual dinámico de trabajo en tiempo real
             const idCarga = "carga-" + Date.now();
             chatBox.innerHTML += `
                 <div id="${idCarga}" class="message ai-msg" style="display: flex; align-items: center;">
@@ -664,7 +689,6 @@ def chat():
             if "choices" in respuesta_json:
                 mensaje_respuesta = respuesta_json["choices"][0]["message"]
                 
-                # Verificación de llamadas a herramientas autónomas
                 if "tool_calls" in mensaje_respuesta:
                     mensajes_api.append(mensaje_respuesta)
                     for llamada_herramienta in mensaje_respuesta["tool_calls"]:
@@ -682,7 +706,6 @@ def chat():
                             "content": resultado_ejecucion
                         })
                     
-                    # Segunda iteración para que OpenAI procese el resultado real de la herramienta
                     payload_seguimiento = {
                         "model": "gpt-4o-mini",
                         "messages": mensajes_api,
@@ -694,7 +717,6 @@ def chat():
                 else:
                     texto_respuesta = mensaje_respuesta.get("content", "Procesamiento de directiva completado.")
 
-                # Actualización controlada de la memoria de sesión
                 historial_conversacion.append({"role": "user", "content": mensaje_usuario})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
                 if len(historial_conversacion) > 10:
