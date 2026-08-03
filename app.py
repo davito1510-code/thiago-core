@@ -44,10 +44,11 @@ SYSTEM_INSTRUCTION = (
     "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción "
     "(como crear un evento en el calendario o enviar un correo electrónico) si la herramienta correspondiente "
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
-    "Tienes acceso total y autorizado a Gmail (lectura y envío de correos), Google Calendar (lectura y creación de eventos "
-    "con invitación a asistentes) y Google Drive (búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
-    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene para ejecutar tareas complejas "
-    "como la redacción de planchas masónicas y gestión de agenda."
+    "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
+    "Google Calendar (lectura y creación de eventos con invitación a asistentes) y Google Drive "
+    "(búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
+    "Cuando el profesor mencione 'mis mails', 'mi calendario' o 'mi drive', entiende de inmediato que se refiere "
+    "a su cuenta personal autorizada y ejecuta las herramientas de forma autónoma sin dudar."
 )
 
 # =============================================================================
@@ -390,7 +391,8 @@ def tool_listar_correos():
             })
         return json.dumps(lista_correos, ensure_ascii=False)
     except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+        print(f"[ERROR EN GMAIL]: {str(error)}")
+        return json.dumps({"error_google_gmail": str(error)}, ensure_ascii=False)
 
 def tool_enviar_correo(destinatario, asunto, cuerpo):
     """Envía un correo electrónico real a través de la infraestructura de Gmail."""
@@ -409,7 +411,8 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         enviado = servicio.users().messages().send(userId='me', body=cuerpo_solicitud).execute()
         return json.dumps({"resultado": "Correo enviado con éxito", "id_mensaje": enviado.get('id')}, ensure_ascii=False)
     except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+        print(f"[ERROR EN ENVÍO GMAIL]: {str(error)}")
+        return json.dumps({"error_google_gmail_envio": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
     """Consulta los próximos eventos y citas agendados en el calendario principal de Google Calendar."""
@@ -440,7 +443,8 @@ def tool_consultar_calendario():
             
         return json.dumps(lista_eventos, ensure_ascii=False)
     except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+        print(f"[ERROR EN CALENDAR]: {str(error)}")
+        return json.dumps({"error_google_calendar": str(error)}, ensure_ascii=False)
 
 def tool_crear_evento_calendario(summary, start_time, end_time, location="", description="", attendees=None):
     """Crea un evento real en Google Calendar con fecha, hora, ubicación, descripción y asistentes opcionales."""
@@ -467,7 +471,8 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
         creado = servicio.events().insert(calendarId='primary', body=evento, sendUpdates='all').execute()
         return json.dumps({"resultado": "Evento creado exitosamente en el calendario con invitaciones enviadas", "link": creado.get('htmlLink')}, ensure_ascii=False)
     except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+        print(f"[ERROR CREANDO EVENTO CALENDAR]: {str(error)}")
+        return json.dumps({"error_google_calendar_creacion": str(error)}, ensure_ascii=False)
 
 def tool_buscar_archivos_drive(query=""):
     """
@@ -497,7 +502,8 @@ def tool_buscar_archivos_drive(query=""):
             return json.dumps({"resultado": f"No se encontró ningún archivo o carpeta con el término '{consulta_limpia}' en Google Drive."}, ensure_ascii=False)
         return json.dumps(elementos, ensure_ascii=False)
     except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+        print(f"[ERROR EN DRIVE SEARCH]: {str(error)}")
+        return json.dumps({"error_google_drive_busqueda": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
     """Extrae el contenido textual de un archivo específico de Drive (PDF, Word o Google Doc) dado su ID."""
@@ -540,7 +546,8 @@ def tool_leer_contenido_drive(file_id):
                     
         return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:limite_caracteres]}, ensure_ascii=False)
     except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
+        print(f"[ERROR LEYENDO DRIVE]: {str(error)}")
+        return json.dumps({"error_google_drive_lectura": str(error)}, ensure_ascii=False)
 
 # =============================================================================
 # SECCIÓN 6: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
@@ -559,7 +566,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_listar_correos",
-            "description": "Consulta los últimos correos de Gmail y extrae su cuerpo íntegro, fecha y remitente."
+            "description": "Consulta los últimos correos de Gmail del profesor David Villarreal y extrae su cuerpo íntegro, fecha y remitente."
         }
     },
     {
@@ -582,7 +589,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_consultar_calendario",
-            "description": "Consulta los próximos eventos y citas registrados en Google Calendar."
+            "description": "Consulta los próximos eventos y citas registrados en el Google Calendar del profesor David Villarreal."
         }
     },
     {
@@ -691,10 +698,12 @@ def chat():
                         except Exception:
                             argumentos_funcion = {}
                         
+                        print(f"[THIAGO INVOCANDO TOOL]: {nombre_funcion} con args: {argumentos_funcion}")
                         if nombre_funcion in available_tools:
                             try:
                                 resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
                             except Exception as tool_err:
+                                print(f"[ERROR EN TOOL {nombre_funcion}]: {str(tool_err)}")
                                 resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
                         else:
                             resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo."}, ensure_ascii=False)
@@ -732,6 +741,7 @@ def chat():
                 return jsonify({"reply": f"Error en la respuesta de OpenAI: {str(respuesta_json)}"})
                 
         except Exception as error_critico:
+            print(f"[ERROR CRÍTICO CHAT]: {str(error_critico)}")
             return jsonify({"reply": f"Error crítico del núcleo cognitivo: {str(error_critico)}"})
     else:
         return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno del servidor."})
