@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Agente Autónomo Integrado (Gmail, Calendar y Drive)
+Núcleo Central de Thiago - Agente Autónomo Avanzado con Exploración Global de Drive
 """
 
 import os
@@ -27,9 +27,8 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "TIENES ACCESO TOTAL Y AUTORIZADO a Gmail (cuerpo íntegro de correos), Google Calendar (eventos y agenda) "
-    "y Google Drive (búsqueda y lectura analítica de documentos). "
-    "Utiliza tus herramientas de manera autónoma y precisa cuando el profesor lo ordene."
+    "TIENES ACCESO TOTAL Y AUTORIZADO a Gmail (cuerpo íntegro), Google Calendar y Google Drive (con capacidad de búsqueda global en todas las carpetas, ordenadores y subdirectorios). "
+    "Cuando el profesor te pida buscar una carpeta compleja o una ruta específica en Drive, utiliza tus herramientas de búsqueda inteligente para localizar los IDs, explora su contenido y procesa los textos con rigor absoluto."
 )
 
 HTML_TEMPLATE = """
@@ -38,7 +37,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago - Agente Integrado</title>
+    <title>Núcleo Central de Thiago - Agente Autónomo</title>
     <style>
         body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 750px; background: #1e293b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -59,10 +58,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Núcleo Central de Thiago</h1>
-        <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Conectividad Total</div>
+        <div class="subtitle">Prof. David Villarreal — Agente Autónomo Integrado con Búsqueda Global</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral en línea. Módulos de Gmail, Calendar y Drive sincronizados. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral avanzado en línea. Motores de búsqueda global de Drive activos. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -179,7 +178,6 @@ def obtener_credenciales():
     )
 
 def extraer_cuerpo_gmail(payload):
-    """Extrae recursivamente el cuerpo de texto plano de un mensaje de correo."""
     body = ""
     if 'parts' in payload:
         for part in payload['parts']:
@@ -202,10 +200,10 @@ def extraer_cuerpo_gmail(payload):
             pass
     return body[:4000] if body else "Sin cuerpo de texto legible."
 
-# --- HERRAMIENTAS AUTÓNOMAS (TOOLS) ---
+# --- HERRAMIENTAS AUTÓNOMAS AVANZADAS ---
 
 def tool_listar_correos():
-    """Consulta los últimos correos electrónicos de Gmail y extrae su contenido íntegro."""
+    """Consulta los últimos correos de Gmail y extrae su cuerpo íntegro."""
     try:
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
@@ -234,7 +232,6 @@ def tool_consultar_calendario():
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
         service = build('calendar', 'v3', credentials=creds)
-        
         now = datetime.datetime.utcnow().isoformat() + 'Z'
         events_result = service.events().list(
             calendarId='primary', timeMin=now,
@@ -242,7 +239,6 @@ def tool_consultar_calendario():
             orderBy='startTime'
         ).execute()
         events = events_result.get('items', [])
-        
         if not events:
             return json.dumps({"resultado": "No hay eventos próximos en la agenda."})
         
@@ -251,21 +247,34 @@ def tool_consultar_calendario():
             start = event['start'].get('dateTime', event['start'].get('date'))
             summary = event.get('summary', 'Sin título')
             lista_eventos.append({"fecha_inicio": start, "evento": summary})
-            
         return json.dumps(lista_eventos, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 def tool_buscar_archivos_drive(query=""):
-    """Busca archivos en Google Drive por nombre."""
+    """Realiza una búsqueda global e inteligente en todo Google Drive (incluyendo ordenadores sincronizados y subcarpetas)."""
     try:
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
         service = build('drive', 'v3', credentials=creds)
-        q = f"name contains '{query}'" if query else ""
+        
+        # Limpiamos la consulta para extraer términos clave de manera robusta
+        limpieza = query.replace(',', ' ').replace('->', ' ').strip()
+        palabras = [p for p in limpieza.split() if len(p) > 2]
+        
+        if palabras:
+            # Buscamos por el término más específico (ej. 'BIBLIOGRAFIA' o 'MASONERIA') o por la frase
+            term = palabras[-1]
+            q = f"name contains '{term}' and trashed = false"
+        else:
+            q = f"name contains '{limpieza}' and trashed = false" if limpieza else "trashed = false"
+
         results = service.files().list(
-            q=q, pageSize=10,
-            fields="files(id, name, mimeType)",
+            q=q, 
+            pageSize=15,
+            fields="files(id, name, mimeType, parents)",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
             orderBy="modifiedTime desc"
         ).execute()
         items = results.get('files', [])
@@ -273,8 +282,28 @@ def tool_buscar_archivos_drive(query=""):
     except Exception as e:
         return json.dumps({"error": str(e)})
 
+def tool_listar_contenido_carpeta(folder_id):
+    """Lista todos los archivos y subcarpetas contenidos dentro de una carpeta específica de Drive dado su ID."""
+    try:
+        creds = obtener_credenciales()
+        if not creds.valid: creds.refresh(Request())
+        service = build('drive', 'v3', credentials=creds)
+        
+        q = f"'{folder_id}' in parents and trashed = false"
+        results = service.files().list(
+            q=q,
+            pageSize=50,
+            fields="files(id, name, mimeType)",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True
+        ).execute()
+        items = results.get('files', [])
+        return json.dumps(items, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
 def tool_leer_contenido_drive(file_id):
-    """Extrae el texto interno de un archivo específico de Drive dado su ID."""
+    """Extrae el texto interno de un archivo específico de Drive (PDF, Word o Doc) dado su ID."""
     try:
         creds = obtener_credenciales()
         if not creds.valid: creds.refresh(Request())
@@ -314,6 +343,7 @@ available_tools = {
     "tool_listar_correos": tool_listar_correos,
     "tool_consultar_calendario": tool_consultar_calendario,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
+    "tool_listar_contenido_carpeta": tool_listar_contenido_carpeta,
     "tool_leer_contenido_drive": tool_leer_contenido_drive
 }
 
@@ -336,11 +366,11 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_buscar_archivos_drive",
-            "description": "Busca archivos en Google Drive por nombre para obtener sus IDs.",
+            "description": "Realiza una búsqueda global en todo Google Drive (incluyendo ordenadores sincronizados) para encontrar carpetas o archivos y obtener sus IDs.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Término de búsqueda (ej. 'Clase 11')."}
+                    "query": {"type": "string", "description": "Término o ruta de búsqueda (ej. 'BIBLIOGRAFIA' o 'COMPAÑERO')."}
                 },
                 "required": []
             }
@@ -349,8 +379,22 @@ openai_tools_definition = [
     {
         "type": "function",
         "function": {
+            "name": "tool_listar_contenido_carpeta",
+            "description": "Lista todos los archivos y subcarpetas dentro de una carpeta específica usando su ID de Drive.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folder_id": {"type": "string", "description": "El ID único de la carpeta en Google Drive."}
+                },
+                "required": ["folder_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto interno de un archivo de Drive usando su ID.",
+            "description": "Extrae el texto interno de un archivo de Drive usando su ID para análisis.",
             "parameters": {
                 "type": "object",
                 "properties": {
