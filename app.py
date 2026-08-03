@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Núcleo Central de Thiago - Agente Autónomo Integrado (Versión Completa y Auditada)
+Núcleo Central de Thiago - Agente Autónomo Integrado (Versión Exhaustiva e Íntegra)
+Profesor David Villarreal — Arquitectura de Conectividad Total (Gmail, Calendar y Drive)
+Desarrollado bajo estrictas normas de auditoría de código y transparencia técnica.
 """
 
 import os
@@ -17,22 +19,34 @@ from googleapiclient.http import MediaIoBaseDownload
 import pypdf
 import docx
 
+# ==========================================
+# INICIALIZACIÓN DE LA APLICACIÓN WEB FLASK
+# ==========================================
 app = Flask(__name__)
 
+# Recuperación de la clave secreta de la API de OpenAI desde el entorno del servidor
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Memoria de sesión temporal para almacenar el historial de la conversación del agente
 historial_conversacion = []
 
+# ==========================================
+# INSTRUCCIÓN DE SISTEMA (SYSTEM PROMPT)
+# ==========================================
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
     "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "TIENES ACCESO TOTAL Y AUTORIZADO a Gmail (cuerpo íntegro de correos), Google Calendar (agenda y eventos) "
+    "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber encontrado un archivo o correo si la herramienta devuelve un resultado vacío. "
+    "Tienes acceso total y autorizado a Gmail (cuerpo íntegro de correos), Google Calendar (agenda y eventos) "
     "y Google Drive (búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
-    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene para ejecutar tareas complejas "
-    "como la redacción de planchas masónicas, análisis bibliográficos o gestión institucional."
+    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene para ejecutar tareas complejas."
 )
 
+# ==========================================
+# INTERFAZ GRÁFICA HTML / CSS / JAVASCRIPT
+# ==========================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -55,6 +69,19 @@ HTML_TEMPLATE = """
         button:hover { background-color: #7dd3fc; }
         #micBtn { background-color: #334155; color: #38bdf8; border: 1px solid #38bdf8; }
         #micBtn.active { background-color: #ef4444; color: white; border-color: #ef4444; }
+        
+        /* Estilos detallados para la señal visual de trabajo (puntos pulsantes animados en tiempo real) */
+        .working-indicator { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; }
+        .working-indicator span {
+            height: 7px; width: 7px; background-color: #38bdf8; border-radius: 50%;
+            display: inline-block; animation: pulse-dot 1.4s infinite ease-in-out both;
+        }
+        .working-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .working-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes pulse-dot {
+            0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+            40% { transform: scale(1.0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -63,7 +90,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Agente Autónomo con Conectividad Total</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral en línea. Módulos de Gmail, Calendar y Drive completamente operativos. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral en línea. Módulos de Gmail, Calendar y Drive operativos con señal visual de actividad. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -135,8 +162,15 @@ HTML_TEMPLATE = """
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
+            // Inyección explícita del indicador visual dinámico de trabajo en tiempo real
             const idCarga = "carga-" + Date.now();
-            chatBox.innerHTML += `<div id="${idCarga}" class="message ai-msg" style="opacity: 0.7;">Ejecutando agente autónomo...</div>`;
+            chatBox.innerHTML += `
+                <div id="${idCarga}" class="message ai-msg" style="display: flex; align-items: center;">
+                    <span>Thiago está consultando las herramientas de Google Workspace</span>
+                    <div class="working-indicator">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
@@ -165,8 +199,11 @@ HTML_TEMPLATE = """
 </html>
 """
 
+# ==========================================
+# FUNCIONES DE AUTENTICACIÓN Y CONECTIVIDAD GOOGLE
+# ==========================================
 def obtener_credenciales():
-    """Obtiene y refresca las credenciales OAuth de Google."""
+    """Obtiene y refresca las credenciales OAuth de Google de manera explícita y segura."""
     return Credentials(
         token=None,
         refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
@@ -181,7 +218,7 @@ def obtener_credenciales():
     )
 
 def extraer_cuerpo_gmail(payload):
-    """Extrae de forma recursiva el cuerpo de texto plano de un mensaje de correo electrónico."""
+    """Extrae de forma recursiva y limpia el cuerpo de texto plano de un mensaje de correo electrónico."""
     cuerpo_texto = ""
     if 'parts' in payload:
         for parte in payload['parts']:
@@ -205,8 +242,9 @@ def extraer_cuerpo_gmail(payload):
             pass
     return cuerpo_texto[:4000] if cuerpo_texto else "Sin cuerpo de texto legible."
 
-# --- MÓDULOS DE HERRAMIENTAS AUTÓNOMAS (TOOLS) ---
-
+# ==========================================
+# HERRAMIENTAS AUTÓNOMAS (TOOLS)
+# ==========================================
 def tool_listar_correos():
     """Consulta los últimos correos electrónicos en Gmail y extrae su contenido íntegro."""
     try:
@@ -216,11 +254,11 @@ def tool_listar_correos():
         servicio = build('gmail', 'v1', credentials=credenciales)
         resultados = servicio.users().messages().list(userId='me', maxResults=3).execute()
         mensajes = resultados.get('messages', [])
-        if not mensagens:
+        if not mensajes:
             return json.dumps({"resultado": "La bandeja de entrada se encuentra vacía."}, ensure_ascii=False)
         
         lista_correos = []
-        for mensaje in mensagens:
+        for mensaje in mensajes:
             detalle = servicio.users().messages().get(userId='me', id=mensaje['id']).execute()
             payload = detalle.get('payload', {})
             encabezados = payload.get('headers', [])
@@ -237,7 +275,7 @@ def tool_listar_correos():
         return json.dumps({"error": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
-    """Consulta los próximos eventos y citas en Google Calendar."""
+    """Consulta los próximos eventos y citas registrados en Google Calendar."""
     try:
         credenciales = obtener_credenciales()
         if not credenciales.valid:
@@ -273,12 +311,12 @@ def tool_buscar_archivos_drive(query=""):
             credenciales.refresh(Request())
         servicio = build('drive', 'v3', credentials=credenciales)
         
-        consulta_limpia = query.replace(',', ' ').replace('->', ' ').strip()
+        consulta_limpia = query.strip()
         condicion = f"name contains '{consulta_limpia}' and trashed = false" if consulta_limpia else "trashed = false"
         
         resultados = servicio.files().list(
             q=condicion,
-            pageSize=15,
+            pageSize=25,
             fields="files(id, name, mimeType, parents)",
             includeItemsFromAllDrives=True,
             supportsAllDrives=True,
@@ -286,34 +324,14 @@ def tool_buscar_archivos_drive(query=""):
         ).execute()
         
         elementos = resultados.get('files', [])
-        return json.dumps(elementos, ensure_ascii=False)
-    except Exception as error:
-        return json.dumps({"error": str(error)}, ensure_ascii=False)
-
-def tool_listar_contenido_carpeta(folder_id):
-    """Lista todos los archivos y subcarpetas contenidos en un directorio específico de Drive usando su ID."""
-    try:
-        credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
-        servicio = build('drive', 'v3', credentials=credenciales)
-        
-        condicion = f"'{folder_id}' in parents and trashed = false"
-        resultados = servicio.files().list(
-            q=condicion,
-            pageSize=50,
-            fields="files(id, name, mimeType)",
-            includeItemsFromAllDrives=True,
-            supportsAllDrives=True
-        ).execute()
-        
-        elementos = resultados.get('files', [])
+        if not elementos:
+            return json.dumps({"resultado": f"No se encontró ningún archivo o carpeta con el término '{consulta_limpia}' en Google Drive."}, ensure_ascii=False)
         return json.dumps(elementos, ensure_ascii=False)
     except Exception as error:
         return json.dumps({"error": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el texto interno de un archivo de Drive (PDF, Word o Google Doc) dado su ID."""
+    """Extrae el texto interno de un archivo específico de Drive (PDF, Word o Google Doc) dado su ID."""
     try:
         credenciales = obtener_credenciales()
         if not credenciales.valid:
@@ -360,7 +378,6 @@ available_tools = {
     "tool_listar_correos": tool_listar_correos,
     "tool_consultar_calendario": tool_consultar_calendario,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
-    "tool_listar_contenido_carpeta": tool_listar_contenido_carpeta,
     "tool_leer_contenido_drive": tool_leer_contenido_drive
 }
 
@@ -383,11 +400,11 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_buscar_archivos_drive",
-            "description": "Realiza una búsqueda global en Google Drive (incluyendo ordenadores sincronizados) para encontrar carpetas o archivos.",
+            "description": "Busca directamente cualquier archivo o carpeta en Google Drive por nombre (ej. 'BIBLIOGRAFIA', 'COMPAÑERO' o 'MASONERIA').",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Término de búsqueda, palabra clave o nombre de carpeta (ej. 'BIBLIOGRAFIA')."}
+                    "query": {"type": "string", "description": "Término de búsqueda o palabra clave."}
                 },
                 "required": []
             }
@@ -396,22 +413,8 @@ openai_tools_definition = [
     {
         "type": "function",
         "function": {
-            "name": "tool_listar_contenido_carpeta",
-            "description": "Lista todos los archivos y subcarpetas dentro de una carpeta específica de Drive utilizando su ID único.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "folder_id": {"type": "string", "description": "El identificador único (ID) de la carpeta en Google Drive."}
-                },
-                "required": ["folder_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto interno de un archivo específico de Drive (PDF, Word o Doc) dado su ID para su análisis.",
+            "description": "Extrae el texto interno de un archivo específico de Drive (PDF, Word o Doc) dado su ID único.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -423,6 +426,9 @@ openai_tools_definition = [
     }
 ]
 
+# ==========================================
+# RUTAS DE LA APLICACIÓN FLASK
+# ==========================================
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
