@@ -4,11 +4,14 @@
  NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL
  Arquitectura de Conectividad Total y Razonamiento Cognitivo Avanzado
  Desarrollado exclusivamente para el Prof. David Villarreal
+ Abogado, Babalawo de Ifa tradicional yoruba, Batuque Isesa, profesor de inglés,
+ magíster en relaciones internacionales, masón y doctorando.
 =============================================================================
 """
 
 import os
 import datetime
+from datetime import timezone
 import json
 import io
 import base64
@@ -27,10 +30,10 @@ import docx
 # =============================================================================
 app = Flask(__name__)
 
-# Recuperación de la clave secreta de la API de OpenAI desde las variables de entorno
+# Recuperación de la clave secreta de la API de OpenAI desde el entorno seguro de Render
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Almacenamiento en memoria volátil para el historial conversacional de la sesión
+# Almacenamiento volátil en memoria para mantener el hilo conversacional de la sesión
 historial_conversacion = []
 
 # =============================================================================
@@ -47,8 +50,8 @@ SYSTEM_INSTRUCTION = (
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura y creación de eventos con invitación a asistentes) y Google Drive "
     "(búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
-    "Cuando el profesor mencione 'mis mails', 'mi calendario' o 'mi drive', entiende de inmediato que se refiere "
-    "a su cuenta personal autorizada y ejecuta las herramientas de forma autónoma sin dudar."
+    "Cuando el profesor mencione 'mis mails', 'mi calendario' o 'mi drive', comprende de inmediato que se refiere "
+    "a su cuenta personal autorizada y ejecuta las herramientas de forma autónoma sin titubear."
 )
 
 # =============================================================================
@@ -62,120 +65,185 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Núcleo Central de Thiago - Agente Autónomo Bidireccional</title>
     <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-terminal: #090d16;
+            --accent-blue: #38bdf8;
+            --accent-user: #0284c7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --error-color: #f87171;
+            --active-mic: #ef4444;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            background: #0f172a;
-            color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-main);
             margin: 0;
             padding: 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
         }
+
         .container {
             width: 100%;
-            max-width: 750px;
-            background: #1e293b;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-width: 800px;
+            background: var(--bg-secondary);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--border-color);
         }
+
         h1 {
-            color: #38bdf8;
+            color: var(--accent-blue);
             text-align: center;
-            font-size: 1.5rem;
+            font-size: 1.75rem;
             margin-bottom: 5px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
         }
+
         .subtitle {
             text-align: center;
-            color: #94a3b8;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 25px;
+            font-size: 0.95rem;
+            font-weight: 500;
         }
+
         .chat-box {
-            background: #090d16;
-            border: 1px solid #334155;
-            height: 380px;
+            background: var(--bg-terminal);
+            border: 1px solid var(--border-color);
+            height: 420px;
             overflow-y: auto;
-            padding: 12px;
-            margin-bottom: 15px;
-            border-radius: 6px;
+            padding: 18px;
+            margin-bottom: 20px;
+            border-radius: 8px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 14px;
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
         }
+
         .message {
-            padding: 10px 14px;
-            border-radius: 6px;
+            padding: 12px 16px;
+            border-radius: 8px;
             max-width: 85%;
-            line-height: 1.5;
+            line-height: 1.6;
             word-break: break-word;
             white-space: pre-wrap;
+            font-size: 0.95rem;
         }
+
         .user-msg {
-            background: #0284c7;
+            background: var(--accent-user);
             color: white;
             align-self: flex-end;
+            border-bottom-right-spread: 2px;
         }
+
         .ai-msg {
-            background: #334155;
-            color: #f1f5f9;
+            background: var(--border-color);
+            color: var(--text-main);
             align-self: flex-start;
+            border-bottom-left-radius: 2px;
+            border: 1px solid #475569;
         }
+
         .input-group {
             display: flex;
-            gap: 8px;
+            gap: 10px;
         }
+
         input[type="text"] {
             flex: 1;
-            padding: 10px;
-            border-radius: 5px;
+            padding: 12px 16px;
+            border-radius: 8px;
             border: 1px solid #475569;
-            background: #0f172a;
+            background: var(--bg-primary);
             color: white;
             font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
         }
+
+        input[type="text"]:focus {
+            border-color: var(--accent-blue);
+        }
+
         button {
-            padding: 10px 16px;
-            background-color: #38bdf8;
-            color: #0f172a;
+            padding: 12px 20px;
+            background-color: var(--accent-blue);
+            color: var(--bg-primary);
             border: none;
-            border-radius: 5px;
-            font-weight: bold;
+            border-radius: 8px;
+            font-weight: 700;
             cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
         }
+
         button:hover {
             background-color: #7dd3fc;
         }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
         #micBtn {
-            background-color: #334155;
-            color: #38bdf8;
-            border: 1px solid #38bdf8;
+            background-color: var(--border-color);
+            color: var(--accent-blue);
+            border: 1px solid var(--accent-blue);
+            font-size: 1.1rem;
+            padding: 12px 16px;
         }
+
         #micBtn.active {
-            background-color: #ef4444;
+            background-color: var(--active-mic);
             color: white;
-            border-color: #ef4444;
+            border-color: var(--active-mic);
+            animation: pulse-mic 1.5s infinite;
         }
+
+        @keyframes pulse-mic {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
         .working-indicator {
             display: inline-flex;
             align-items: center;
-            gap: 5px;
-            margin-left: 8px;
+            gap: 6px;
+            margin-left: 10px;
         }
+
         .working-indicator span {
-            height: 7px;
-            width: 7px;
-            background-color: #38bdf8;
+            height: 8px;
+            width: 8px;
+            background-color: var(--accent-blue);
             border-radius: 50%;
             display: inline-block;
             animation: pulse-dot 1.4s infinite ease-in-out both;
         }
+
         .working-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .working-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
         @keyframes pulse-dot {
             0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
             40% { transform: scale(1.0); opacity: 1; }
+        }
+
+        .error-text {
+            color: var(--error-color);
         }
     </style>
 </head>
@@ -297,7 +365,7 @@ HTML_TEMPLATE = """
                 hablarTexto(data.reply);
             } catch (error) {
                 document.getElementById(idCarga).remove();
-                chatBox.innerHTML += `<div class="message ai-msg" style="color:#f87171;">Error crítico de comunicación con el núcleo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg error-text">Error crítico de comunicación con el núcleo.</div>`;
             }
         }
 
@@ -314,15 +382,19 @@ HTML_TEMPLATE = """
 # =============================================================================
 def obtener_credenciales():
     """
-    Construye y refresca las credenciales OAuth de Google utilizando los tokens
-    almacenados en el entorno seguro, otorgando permisos completos de lectura y escritura.
+    Construye y refresca las credenciales OAuth de Google aplicando sanitización 
+    rigurosa para eliminar comillas o espacios accidentales en las variables de entorno.
     """
-    return Credentials(
+    r_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip().strip('"\'')
+    c_id = os.getenv("GOOGLE_CLIENT_ID", "").strip().strip('"\'')
+    c_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip().strip('"\'')
+
+    credenciales = Credentials(
         token=None,
-        refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
+        refresh_token=r_token,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=os.getenv("GOOGLE_CLIENT_ID"),
-        client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+        client_id=c_id,
+        client_secret=c_secret,
         scopes=[
             'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.send',
@@ -330,11 +402,13 @@ def obtener_credenciales():
             'https://www.googleapis.com/auth/drive.readonly'
         ]
     )
+    if not credenciales.valid:
+        credenciales.refresh(Request())
+    return credenciales
 
 def extraer_cuerpo_gmail(payload):
     """
-    Función auxiliar recursiva para extraer y decodificar el cuerpo en texto plano
-    de un mensaje de correo electrónico recibido a través de la API de Gmail.
+    Función auxiliar recursiva para decodificar el cuerpo en texto plano de un correo electrónico.
     """
     cuerpo_texto = ""
     if 'parts' in payload:
@@ -366,8 +440,6 @@ def tool_listar_correos():
     """Consulta los últimos correos electrónicos recibidos en la bandeja de entrada de Gmail."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
         servicio = build('gmail', 'v1', credentials=credenciales)
         resultados = servicio.users().messages().list(userId='me', maxResults=5).execute()
         mensajes = resultados.get('messages', [])
@@ -391,15 +463,12 @@ def tool_listar_correos():
             })
         return json.dumps(lista_correos, ensure_ascii=False)
     except Exception as error:
-        print(f"[ERROR EN GMAIL]: {str(error)}")
-        return json.dumps({"error_google_gmail": str(error)}, ensure_ascii=False)
+        return json.dumps({"error_tecnico_gmail": str(error)}, ensure_ascii=False)
 
 def tool_enviar_correo(destinatario, asunto, cuerpo):
     """Envía un correo electrónico real a través de la infraestructura de Gmail."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
         servicio = build('gmail', 'v1', credentials=credenciales)
         
         mensaje = MIMEText(cuerpo)
@@ -407,21 +476,18 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         mensaje['subject'] = asunto
         raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')
         
-        cuerpo_solicitud = {'raw': raw_message}
-        enviado = servicio.users().messages().send(userId='me', body=cuerpo_solicitud).execute()
+        enviado = servicio.users().messages().send(userId='me', body={'raw': raw_message}).execute()
         return json.dumps({"resultado": "Correo enviado con éxito", "id_mensaje": enviado.get('id')}, ensure_ascii=False)
     except Exception as error:
-        print(f"[ERROR EN ENVÍO GMAIL]: {str(error)}")
-        return json.dumps({"error_google_gmail_envio": str(error)}, ensure_ascii=False)
+        return json.dumps({"error_tecnico_gmail_envio": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
     """Consulta los próximos eventos y citas agendados en el calendario principal de Google Calendar."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
         servicio = build('calendar', 'v3', credentials=credenciales)
-        ahora = datetime.datetime.utcnow().isoformat() + 'Z'
+        ahora = datetime.datetime.now(timezone.utc).isoformat()
+        
         respuesta_eventos = servicio.events().list(
             calendarId='primary',
             timeMin=ahora,
@@ -443,15 +509,12 @@ def tool_consultar_calendario():
             
         return json.dumps(lista_eventos, ensure_ascii=False)
     except Exception as error:
-        print(f"[ERROR EN CALENDAR]: {str(error)}")
-        return json.dumps({"error_google_calendar": str(error)}, ensure_ascii=False)
+        return json.dumps({"error_tecnico_calendar": str(error)}, ensure_ascii=False)
 
 def tool_crear_evento_calendario(summary, start_time, end_time, location="", description="", attendees=None):
     """Crea un evento real en Google Calendar con fecha, hora, ubicación, descripción y asistentes opcionales."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
         servicio = build('calendar', 'v3', credentials=credenciales)
         
         evento = {
@@ -469,10 +532,9 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
                 evento['attendees'] = [{'email': email.strip()} for email in attendees.split(',')]
         
         creado = servicio.events().insert(calendarId='primary', body=evento, sendUpdates='all').execute()
-        return json.dumps({"resultado": "Evento creado exitosamente en el calendario con invitaciones enviadas", "link": creado.get('htmlLink')}, ensure_ascii=False)
+        return json.dumps({"resultado": "Evento creado exitosamente en el calendario", "link": creado.get('htmlLink')}, ensure_ascii=False)
     except Exception as error:
-        print(f"[ERROR CREANDO EVENTO CALENDAR]: {str(error)}")
-        return json.dumps({"error_google_calendar_creacion": str(error)}, ensure_ascii=False)
+        return json.dumps({"error_tecnico_calendar_creacion": str(error)}, ensure_ascii=False)
 
 def tool_buscar_archivos_drive(query=""):
     """
@@ -481,11 +543,9 @@ def tool_buscar_archivos_drive(query=""):
     """
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
         servicio = build('drive', 'v3', credentials=credenciales)
         
-        consulta_limpia = query.strip()
+        consulta_limpia = query.strip().replace("'", "\\'")
         condicion = f"name contains '{consulta_limpia}' and trashed = false" if consulta_limpia else "trashed = false"
         
         resultados = servicio.files().list(
@@ -499,31 +559,26 @@ def tool_buscar_archivos_drive(query=""):
         
         elementos = resultados.get('files', [])
         if not elementos:
-            return json.dumps({"resultado": f"No se encontró ningún archivo o carpeta con el término '{consulta_limpia}' en Google Drive."}, ensure_ascii=False)
+            return json.dumps({"resultado": f"No se encontró ningún archivo con el término '{consulta_limpia}' en Google Drive."}, ensure_ascii=False)
         return json.dumps(elementos, ensure_ascii=False)
     except Exception as error:
-        print(f"[ERROR EN DRIVE SEARCH]: {str(error)}")
-        return json.dumps({"error_google_drive_busqueda": str(error)}, ensure_ascii=False)
+        return json.dumps({"error_tecnico_drive": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el contenido textual de un archivo específico de Drive (PDF, Word o Google Doc) dado su ID."""
+    """Extrae el contenido textual de un archivo específico de Google Drive (PDF, Word o Google Doc)."""
     try:
         credenciales = obtener_credenciales()
-        if not credenciales.valid:
-            credenciales.refresh(Request())
         servicio = build('drive', 'v3', credentials=credenciales)
         
         metadatos = servicio.files().get(fileId=file_id, fields="name, mimeType").execute()
         nombre_archivo = metadatos.get('name')
         tipo_mime = metadatos.get('mimeType')
         
-        limite_caracteres = 8000
         texto_extraido = ""
         
         if 'application/vnd.google-apps.document' in tipo_mime:
             solicitud = servicio.files().export_media(fileId=file_id, mimeType='text/plain')
-            contenido_bytes = solicitud.execute()
-            texto_extraido = contenido_bytes.decode('utf-8', errors='ignore')
+            texto_extraido = solicitud.execute().decode('utf-8', errors='ignore')
         else:
             solicitud = servicio.files().get_media(fileId=file_id)
             buffer_memoria = io.BytesIO()
@@ -544,10 +599,9 @@ def tool_leer_contenido_drive(file_id):
                 for parrafo in documento_word.paragraphs[:100]:
                     texto_extraido += parrafo.text + "\n"
                     
-        return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:limite_caracteres]}, ensure_ascii=False)
+        return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:8000]}, ensure_ascii=False)
     except Exception as error:
-        print(f"[ERROR LEYENDO DRIVE]: {str(error)}")
-        return json.dumps({"error_google_drive_lectura": str(error)}, ensure_ascii=False)
+        return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
 # =============================================================================
 # SECCIÓN 6: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
@@ -566,7 +620,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_listar_correos",
-            "description": "Consulta los últimos correos de Gmail del profesor David Villarreal y extrae su cuerpo íntegro, fecha y remitente."
+            "description": "Consulta los últimos correos de Gmail del profesor David Villarreal."
         }
     },
     {
@@ -601,14 +655,14 @@ openai_tools_definition = [
                 "type": "object",
                 "properties": {
                     "summary": {"type": "string", "description": "Título o nombre del evento."},
-                    "start_time": {"type": "string", "description": "Fecha y hora de inicio en formato ISO (ej. 2026-08-07T15:00:00-03:00)."},
-                    "end_time": {"type": "string", "description": "Fecha y hora de finalización en formato ISO (ej. 2026-08-07T17:00:00-03:00)."},
+                    "start_time": {"type": "string", "description": "Fecha y hora de inicio en formato ISO."},
+                    "end_time": {"type": "string", "description": "Fecha y hora de finalización en formato ISO."},
                     "location": {"type": "string", "description": "Ubicación o dirección física."},
                     "description": {"type": "string", "description": "Detalles adicionales del evento."},
                     "attendees": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Lista de correos electrónicos de los invitados a añadir al evento."
+                        "description": "Lista de correos electrónicos de los invitados."
                     }
                 },
                 "required": ["summary", "start_time", "end_time"]
@@ -619,7 +673,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_buscar_archivos_drive",
-            "description": "Busca archivos o carpetas en Google Drive por palabra clave (ej. 'BIBLIOGRAFIA', 'COMPAÑERO', 'MASONERIA').",
+            "description": "Busca archivos o carpetas en Google Drive por palabra clave (ej. 'bibliografia', 'masonia').",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -698,12 +752,10 @@ def chat():
                         except Exception:
                             argumentos_funcion = {}
                         
-                        print(f"[THIAGO INVOCANDO TOOL]: {nombre_funcion} con args: {argumentos_funcion}")
                         if nombre_funcion in available_tools:
                             try:
                                 resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
                             except Exception as tool_err:
-                                print(f"[ERROR EN TOOL {nombre_funcion}]: {str(tool_err)}")
                                 resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
                         else:
                             resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo."}, ensure_ascii=False)
@@ -714,7 +766,7 @@ def chat():
                             "content": resultado_ejecucion
                         })
                     
-                    # Segunda iteración cognitiva para que el LLM procese el resultado real de la herramienta
+                    # Segunda iteración cognitiva para procesar el resultado de la herramienta
                     payload_seguimiento = {
                         "model": "gpt-4o-mini",
                         "messages": mensajes_api,
@@ -730,7 +782,6 @@ def chat():
                 else:
                     texto_respuesta = mensaje_respuesta.get("content", "Procesamiento de directiva completado.")
 
-                # Actualización controlada de la memoria volátil de sesión
                 historial_conversacion.append({"role": "user", "content": mensaje_usuario})
                 historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
                 if len(historial_conversacion) > 12:
@@ -741,7 +792,6 @@ def chat():
                 return jsonify({"reply": f"Error en la respuesta de OpenAI: {str(respuesta_json)}"})
                 
         except Exception as error_critico:
-            print(f"[ERROR CRÍTICO CHAT]: {str(error_critico)}")
             return jsonify({"reply": f"Error crítico del núcleo cognitivo: {str(error_critico)}"})
     else:
         return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno del servidor."})
