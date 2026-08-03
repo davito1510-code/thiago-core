@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
- NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL COMPLETO
+ NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL
  Arquitectura de Conectividad Total (Gmail, Google Calendar y Google Drive)
  Desarrollado exclusivamente para el Prof. David Villarreal
 =============================================================================
@@ -45,8 +45,9 @@ SYSTEM_INSTRUCTION = (
     "(como crear un evento en el calendario o enviar un correo electrónico) si la herramienta correspondiente "
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
     "Tienes acceso total y autorizado a Gmail (lectura y envío de correos), Google Calendar (lectura y creación de eventos) "
-    "y Google Drive (búsqueda global y lectura analítica de textos). "
-    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene."
+    "y Google Drive (búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
+    "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene para ejecutar tareas complejas "
+    "como la redacción de planchas masónicas y gestión de agenda."
 )
 
 # =============================================================================
@@ -446,7 +447,10 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
         return json.dumps({"error": str(error)}, ensure_ascii=False)
 
 def tool_buscar_archivos_drive(query=""):
-    """Realiza una búsqueda global e inteligente de archivos y carpetas en Google Drive."""
+    """
+    Realiza una búsqueda global e inteligente de archivos y carpetas en Google Drive,
+    incluyendo de forma explícita los ordenadores y volúmenes sincronizados (Computers).
+    """
     try:
         credenciales = obtener_credenciales()
         if not credenciales.valid:
@@ -458,7 +462,7 @@ def tool_buscar_archivos_drive(query=""):
         
         resultados = servicio.files().list(
             q=condicion,
-            pageSize=25,
+            pageSize=30,
             fields="files(id, name, mimeType, parents)",
             includeItemsFromAllDrives=True,
             supportsAllDrives=True,
