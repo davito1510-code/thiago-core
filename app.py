@@ -44,8 +44,8 @@ SYSTEM_INSTRUCTION = (
     "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción "
     "(como crear un evento en el calendario o enviar un correo electrónico) si la herramienta correspondiente "
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
-    "Tienes acceso total y autorizado a Gmail (lectura y envío de correos), Google Calendar (lectura y creación de eventos) "
-    "y Google Drive (búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
+    "Tienes acceso total y autorizado a Gmail (lectura y envío de correos), Google Calendar (lectura y creación de eventos "
+    "con invitación a asistentes) y Google Drive (búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
     "Utiliza tus herramientas de manera autónoma cuando el profesor lo ordene para ejecutar tareas complejas "
     "como la redacción de planchas masónicas y gestión de agenda."
 )
@@ -258,7 +258,7 @@ HTML_TEMPLATE = """
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Inyección explícita del indicador visual dinámico de trabajo en tiempo real
+            # Inyección explícita del indicador visual dinámico de trabajo en tiempo real
             const idCarga = "carga-" + Date.now();
             chatBox.innerHTML += `
                 <div id="${idCarga}" class="message ai-msg" style="display: flex; align-items: center;">
@@ -425,8 +425,8 @@ def tool_consultar_calendario():
     except Exception as error:
         return json.dumps({"error": str(error)}, ensure_ascii=False)
 
-def tool_crear_evento_calendario(summary, start_time, end_time, location="", description=""):
-    """Crea un evento real en Google Calendar con fecha, hora, ubicación y descripción."""
+def tool_crear_evento_calendario(summary, start_time, end_time, location="", description="", attendees=None):
+    """Crea un evento real en Google Calendar con fecha, hora, ubicación, descripción y asistentes opcionales."""
     try:
         credenciales = obtener_credenciales()
         if not credenciales.valid:
@@ -441,8 +441,14 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
             'end': {'dateTime': end_time, 'timeZone': 'America/Argentina/Buenos_Aires'},
         }
         
-        creado = servicio.events().insert(calendarId='primary', body=evento).execute()
-        return json.dumps({"resultado": "Evento creado exitosamente en el calendario", "link": creado.get('htmlLink')}, ensure_ascii=False)
+        if attendees:
+            if isinstance(attendees, list):
+                evento['attendees'] = [{'email': email.strip()} for email in attendees]
+            elif isinstance(attendees, str):
+                evento['attendees'] = [{'email': email.strip()} for email in attendees.split(',')]
+        
+        creado = servicio.events().insert(calendarId='primary', body=evento, sendUpdates='all').execute()
+        return json.dumps({"resultado": "Evento creado exitosamente en el calendario con invitaciones enviadas", "link": creado.get('htmlLink')}, ensure_ascii=False)
     except Exception as error:
         return json.dumps({"error": str(error)}, ensure_ascii=False)
 
@@ -566,7 +572,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_crear_evento_calendario",
-            "description": "Crea un evento real en Google Calendar con fecha, hora, ubicación y descripción.",
+            "description": "Crea un evento real en Google Calendar con fecha, hora, ubicación, descripción y asistentes invitados.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -574,7 +580,12 @@ openai_tools_definition = [
                     "start_time": {"type": "string", "description": "Fecha y hora de inicio en formato ISO (ej. 2026-08-07T15:00:00-03:00)."},
                     "end_time": {"type": "string", "description": "Fecha y hora de finalización en formato ISO (ej. 2026-08-07T17:00:00-03:00)."},
                     "location": {"type": "string", "description": "Ubicación o dirección física."},
-                    "description": {"type": "string", "description": "Detalles adicionales del evento."}
+                    "description": {"type": "string", "description": "Detalles adicionales del evento."},
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Lista de correos electrónicos de los invitados a añadir al evento."
+                    }
                 },
                 "required": ["summary", "start_time", "end_time"]
             }
