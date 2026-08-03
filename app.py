@@ -258,7 +258,7 @@ HTML_TEMPLATE = """
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            # Inyección explícita del indicador visual dinámico de trabajo en tiempo real
+            // Inyección explícita del indicador visual dinámico de trabajo en tiempo real
             const idCarga = "carga-" + Date.now();
             chatBox.innerHTML += `
                 <div id="${idCarga}" class="message ai-msg" style="display: flex; align-items: center;">
