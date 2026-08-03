@@ -30,10 +30,7 @@ import docx
 # =============================================================================
 app = Flask(__name__)
 
-# Recuperación de la clave secreta de la API de OpenAI desde el entorno seguro de Render
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Almacenamiento volátil en memoria para mantener el hilo conversacional de la sesión
 historial_conversacion = []
 
 # =============================================================================
@@ -146,14 +143,12 @@ HTML_TEMPLATE = """
             background: var(--accent-user);
             color: white;
             align-self: flex-end;
-            border-bottom-right-spread: 2px;
         }
 
         .ai-msg {
             background: var(--border-color);
             color: var(--text-main);
             align-self: flex-start;
-            border-bottom-left-radius: 2px;
             border: 1px solid #475569;
         }
 
@@ -381,10 +376,7 @@ HTML_TEMPLATE = """
 # SECCIÓN 4: GESTIÓN DE CREDENCIALES OAUTH Y CONECTIVIDAD GOOGLE
 # =============================================================================
 def obtener_credenciales():
-    """
-    Construye y refresca las credenciales OAuth de Google aplicando sanitización 
-    rigurosa para eliminar comillas o espacios accidentales en las variables de entorno.
-    """
+    """Construye y refresca las credenciales OAuth aplicando sanitización estricta."""
     r_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip().strip('"\'')
     c_id = os.getenv("GOOGLE_CLIENT_ID", "").strip().strip('"\'')
     c_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip().strip('"\'')
@@ -407,9 +399,6 @@ def obtener_credenciales():
     return credenciales
 
 def extraer_cuerpo_gmail(payload):
-    """
-    Función auxiliar recursiva para decodificar el cuerpo en texto plano de un correo electrónico.
-    """
     cuerpo_texto = ""
     if 'parts' in payload:
         for parte in payload['parts']:
@@ -437,7 +426,7 @@ def extraer_cuerpo_gmail(payload):
 # SECCIÓN 5: HERRAMIENTAS AUTÓNOMAS (TOOLS) DE LECTURA Y ESCRITURA
 # =============================================================================
 def tool_listar_correos():
-    """Consulta los últimos correos electrónicos recibidos en la bandeja de entrada de Gmail."""
+    """Consulta los últimos correos electrónicos de la bandeja de entrada de Gmail."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('gmail', 'v1', credentials=credenciales)
@@ -463,10 +452,11 @@ def tool_listar_correos():
             })
         return json.dumps(lista_correos, ensure_ascii=False)
     except Exception as error:
+        print(f"[ERROR CRÍTICO GMAIL DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_gmail": str(error)}, ensure_ascii=False)
 
 def tool_enviar_correo(destinatario, asunto, cuerpo):
-    """Envía un correo electrónico real a través de la infraestructura de Gmail."""
+    """Envía un correo electrónico a través de la infraestructura de Gmail."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('gmail', 'v1', credentials=credenciales)
@@ -479,10 +469,11 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         enviado = servicio.users().messages().send(userId='me', body={'raw': raw_message}).execute()
         return json.dumps({"resultado": "Correo enviado con éxito", "id_mensaje": enviado.get('id')}, ensure_ascii=False)
     except Exception as error:
+        print(f"[ERROR CRÍTICO GMAIL ENVÍO DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_gmail_envio": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
-    """Consulta los próximos eventos y citas agendados en el calendario principal de Google Calendar."""
+    """Consulta los próximos eventos y citas agendados en Google Calendar."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
@@ -509,10 +500,11 @@ def tool_consultar_calendario():
             
         return json.dumps(lista_eventos, ensure_ascii=False)
     except Exception as error:
+        print(f"[ERROR CRÍTICO CALENDAR DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_calendar": str(error)}, ensure_ascii=False)
 
 def tool_crear_evento_calendario(summary, start_time, end_time, location="", description="", attendees=None):
-    """Crea un evento real en Google Calendar con fecha, hora, ubicación, descripción y asistentes opcionales."""
+    """Crea un evento en Google Calendar con asistentes opcionales."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
@@ -534,13 +526,11 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
         creado = servicio.events().insert(calendarId='primary', body=evento, sendUpdates='all').execute()
         return json.dumps({"resultado": "Evento creado exitosamente en el calendario", "link": creado.get('htmlLink')}, ensure_ascii=False)
     except Exception as error:
+        print(f"[ERROR CRÍTICO CALENDAR CREACIÓN DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_calendar_creacion": str(error)}, ensure_ascii=False)
 
 def tool_buscar_archivos_drive(query=""):
-    """
-    Realiza una búsqueda global e inteligente de archivos y carpetas en Google Drive,
-    incluyendo de forma explícita los ordenadores y volúmenes sincronizados (Computers).
-    """
+    """Busca archivos o carpetas en Google Drive aplicando sanitización estricta de cadenas."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -562,10 +552,11 @@ def tool_buscar_archivos_drive(query=""):
             return json.dumps({"resultado": f"No se encontró ningún archivo con el término '{consulta_limpia}' en Google Drive."}, ensure_ascii=False)
         return json.dumps(elementos, ensure_ascii=False)
     except Exception as error:
+        print(f"[ERROR CRÍTICO DRIVE BÚSQUEDA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el contenido textual de un archivo específico de Google Drive (PDF, Word o Google Doc)."""
+    """Extrae el contenido textual de un archivo específico de Google Drive."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -601,6 +592,7 @@ def tool_leer_contenido_drive(file_id):
                     
         return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:8000]}, ensure_ascii=False)
     except Exception as error:
+        print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
 # =============================================================================
@@ -756,6 +748,7 @@ def chat():
                             try:
                                 resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
                             except Exception as tool_err:
+                                print(f"[ERROR EN EJECUCIÓN DE TOOL {nombre_funcion}]: {repr(tool_err)}")
                                 resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
                         else:
                             resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo."}, ensure_ascii=False)
@@ -792,6 +785,7 @@ def chat():
                 return jsonify({"reply": f"Error en la respuesta de OpenAI: {str(respuesta_json)}"})
                 
         except Exception as error_critico:
+            print(f"[ERROR CRÍTICO CHAT GENERAL]: {repr(error_critico)}")
             return jsonify({"reply": f"Error crítico del núcleo cognitivo: {str(error_critico)}"})
     else:
         return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno del servidor."})
