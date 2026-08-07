@@ -24,6 +24,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import pypdf
 import docx
+from duckduckgo_search import DDGS
 
 # =============================================================================
 # SECCIÓN 1: INICIALIZACIÓN Y CONFIGURACIÓN DEL SERVIDOR FLASK
@@ -45,8 +46,8 @@ SYSTEM_INSTRUCTION = (
     "(como crear un evento en el calendario o enviar un correo electrónico) si la herramienta correspondiente "
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
-    "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes) y Google Drive "
-    "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos). "
+    "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
+    "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos) y BÚSQUEDA WEB AUTÓNOMA (DuckDuckGo). "
     "Cuando el profesor mencione 'mis mails', 'mi calendario' o 'mi drive', comprende de inmediato que se refiere "
     "a su cuenta personal autorizada y ejecuta las herramientas de forma autónoma sin titubear."
 )
@@ -479,7 +480,6 @@ def tool_consultar_calendario():
         servicio = build('calendar', 'v3', credentials=credenciales)
         ahora = datetime.datetime.now(timezone.utc).isoformat()
         
-        # Ampliamos maxResults a 50 para evitar el corte prematuro en consultas semanales
         respuesta_eventos = servicio.events().list(
             calendarId='primary',
             timeMin=ahora,
@@ -556,60 +556,6 @@ def tool_buscar_archivos_drive(query=""):
         print(f"[ERROR CRÍTICO DRIVE BÚSQUEDA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive": str(error)}, ensure_ascii=False)
 
-def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
-    """Busca una carpeta por nombre en Google Drive y lista explícitamente todos los archivos contenidos dentro de ella (por ID de padre)."""
-    try:
-        credenciales = obtener_credenciales()
-        servicio = build('drive', 'v3', credentials=credenciales)
-        
-        nombre_limpio = nombre_carpeta.strip().replace("'", "\\'")
-        # Paso 1: Buscar la carpeta por su nombre para obtener su ID único
-        query_carpeta = f"name = '{nombre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        res_carpeta = servicio.files().list(q=query_carpeta, pageSize=5, fields="files(id, name)").execute()
-        carpetas = res_carpeta.get('files', [])
-        
-        if not carpetas:
-            # Búsqueda flexible si no hay coincidencia exacta
-            query_flex = f"name contains '{nombre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-            res_flex = servicio.files().list(q=query_flex, pageSize=5, fields="files(id, name)").execute()
-            carpetas = res_flex.get('files', [])
-            if not carpetas:
-                return json.dumps({"resultado": f"No se encontró ninguna carpeta con el nombre '{nombre_carpeta}' en Google Drive."}, ensure_ascii=False)
-        
-        carpeta_id = carpetas[0]['id']
-        nombre_encontrado = carpetas[0]['name']
-        
-        # Paso 2: Listar los archivos cuyo padre sea esta carpeta
-        query_hijos = f"'{carpeta_id}' in parents and trashed = false"
-        res_hijos = servicio.files().list(
-            q=query_hijos,
-            pageSize=50,
-            fields="files(id, name, mimeType, modifiedTime)",
-            includeItemsFromAllDrives=True,
-            supportsAllDrives=True,
-            orderBy="name asc"
-        ).execute()
-        
-        hijos = res_hijos.get('files', [])
-        if not hijos:
-            return json.dumps({"resultado": f"La carpeta '{nombre_encontrado}' (ID: {carpeta_id}) existe pero se encuentra vacía o no tiene elementos accesibles."}, ensure_ascii=False)
-            
-        lista_elementos = []
-        for hijo in hijos:
-            es_carpeta = hijo.get('mimeType') == 'application/vnd.google-apps.folder'
-            tipo_elem = "Carpeta" if es_carpeta else "Archivo"
-            lista_elementos.append({
-                "tipo": tipo_elem,
-                "id": hijo.get('id'),
-                "nombre": hijo.get('name'),
-                "modificado": hijo.get('modifiedTime')
-            })
-            
-        return json.dumps({"carpeta_madre": nombre_encontrado, "id_carpeta": carpeta_id, "elementos": lista_elementos}, ensure_ascii=False)
-    except Exception as error:
-        print(f"[ERROR CRÍTICO LISTAR CARPETA DRIVE]: {repr(error)}")
-        return json.dumps({"error_tecnico_listar_carpeta": str(error)}, ensure_ascii=False)
-
 def tool_leer_contenido_drive(file_id):
     """Extrae el contenido textual de un archivo específico de Google Drive."""
     try:
@@ -650,6 +596,68 @@ def tool_leer_contenido_drive(file_id):
         print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
+# --- NUEVAS CAPACIDADES INCORPORADAS ---
+def tool_busqueda_web(query):
+    """Realiza una búsqueda exhaustiva en la web utilizando DuckDuckGo."""
+    try:
+        with DDGS() as ddgs:
+            resultados = list(ddgs.text(query, max_results=5))
+            return json.dumps(resultados, ensure_ascii=False)
+    except Exception as error:
+        print(f"[ERROR BÚSQUEDA WEB]: {repr(error)}")
+        return json.dumps({"error_tecnico_web": str(error)}, ensure_ascii=False)
+
+def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
+    """Busca una carpeta por nombre en Google Drive y lista explícitamente todos los archivos contenidos dentro de ella (por ID de padre)."""
+    try:
+        credenciales = obtener_credenciales()
+        servicio = build('drive', 'v3', credentials=credenciales)
+        
+        nombre_limpio = nombre_carpeta.strip().replace("'", "\\'")
+        query_carpeta = f"name = '{nombre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        res_carpeta = servicio.files().list(q=query_carpeta, pageSize=5, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+        carpetas = res_carpeta.get('files', [])
+        
+        if not carpetas:
+            query_flex = f"name contains '{nombre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            res_flex = servicio.files().list(q=query_flex, pageSize=5, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            carpetas = res_flex.get('files', [])
+            if not carpetas:
+                return json.dumps({"resultado": f"No se encontró ninguna carpeta con el nombre '{nombre_carpeta}' en Google Drive."}, ensure_ascii=False)
+        
+        carpeta_id = carpetas[0]['id']
+        nombre_encontrado = carpetas[0]['name']
+        
+        query_hijos = f"'{carpeta_id}' in parents and trashed = false"
+        res_hijos = servicio.files().list(
+            q=query_hijos,
+            pageSize=50,
+            fields="files(id, name, mimeType, modifiedTime)",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            orderBy="name asc"
+        ).execute()
+        
+        hijos = res_hijos.get('files', [])
+        if not hijos:
+            return json.dumps({"resultado": f"La carpeta '{nombre_encontrado}' (ID: {carpeta_id}) existe pero se encuentra vacía o no tiene elementos accesibles."}, ensure_ascii=False)
+            
+        lista_elementos = []
+        for hijo in hijos:
+            es_carpeta = hijo.get('mimeType') == 'application/vnd.google-apps.folder'
+            tipo_elem = "Carpeta" if es_carpeta else "Archivo"
+            lista_elementos.append({
+                "tipo": tipo_elem,
+                "id": hijo.get('id'),
+                "nombre": hijo.get('name'),
+                "modificado": hijo.get('modifiedTime')
+            })
+            
+        return json.dumps({"carpeta_madre": nombre_encontrado, "id_carpeta": carpeta_id, "elementos": lista_elementos}, ensure_ascii=False)
+    except Exception as error:
+        print(f"[ERROR CRÍTICO LISTAR CARPETA DRIVE]: {repr(error)}")
+        return json.dumps({"error_tecnico_listar_carpeta": str(error)}, ensure_ascii=False)
+
 # =============================================================================
 # SECCIÓN 6: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
 # =============================================================================
@@ -659,8 +667,9 @@ available_tools = {
     "tool_consultar_calendario": tool_consultar_calendario,
     "tool_crear_evento_calendario": tool_crear_evento_calendario,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
-    "tool_listar_contenido_carpeta_drive": tool_listar_contenido_carpeta_drive,
-    "tool_leer_contenido_drive": tool_leer_contenido_drive
+    "tool_leer_contenido_drive": tool_leer_contenido_drive,
+    "tool_busqueda_web": tool_busqueda_web,
+    "tool_listar_contenido_carpeta_drive": tool_listar_contenido_carpeta_drive
 }
 
 openai_tools_definition = [
@@ -756,6 +765,20 @@ openai_tools_definition = [
                     "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive."}
                 },
                 "required": ["file_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_busqueda_web",
+            "description": "Realiza una búsqueda en internet mediante DuckDuckGo para extraer información actualizada.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Consulta de búsqueda para la web."}
+                },
+                "required": ["query"]
             }
         }
     }
