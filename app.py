@@ -596,7 +596,7 @@ def tool_leer_contenido_drive(file_id):
         print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
-# --- NUEVA CAPACIDAD WEB BLINDADA CONTRA EXCEPCIONES DE RED ---
+# --- NUEVAS CAPACIDADES INCORPORADAS (BLINDADAS) ---
 def tool_busqueda_web(query):
     """Realiza una búsqueda web con control absoluto de excepciones ante restricciones de IP en la nube."""
     try:
