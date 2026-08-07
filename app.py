@@ -596,16 +596,38 @@ def tool_leer_contenido_drive(file_id):
         print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
-# --- NUEVAS CAPACIDADES INCORPORADAS ---
+# --- NUEVAS CAPACIDADES INCORPORADAS (BLINDADAS) ---
 def tool_busqueda_web(query):
-    """Realiza una búsqueda exhaustiva en la web utilizando DuckDuckGo."""
+    """Realiza una búsqueda en la web con control absoluto de excepciones ante restricciones de IP en la nube."""
     try:
+        resultados = []
         with DDGS() as ddgs:
-            resultados = list(ddgs.text(query, max_results=5))
-            return json.dumps(resultados, ensure_ascii=False)
+            for r in ddgs.text(query, max_results=5):
+                resultados.append({
+                    "title": r.get("title", "Sin título"),
+                    "href": r.get("href", "Sin enlace"),
+                    "body": r.get("body", "Sin descripción")
+                })
+        
+        if not resultados:
+            return json.dumps({
+                "resultado": "La consulta no arrojó resultados activos en la web en este momento."
+            }, ensure_ascii=False)
+            
+        return json.dumps(resultados, ensure_ascii=False)
+        
     except Exception as error:
-        print(f"[ERROR BÚSQUEDA WEB]: {repr(error)}")
-        return json.dumps({"error_tecnico_web": str(error)}, ensure_ascii=False)
+        error_str = str(error)
+        print(f"[ADVERTENCIA TÉCNICA DE RED - WEB]: {error_str}")
+        if "ratelimit" in error_str.lower() or "202" in error_str or "timeout" in error_str.lower():
+            return json.dumps({
+                "estado": "pausa de seguridad del buscador",
+                "detalle": "El servicio de búsqueda web ha limitado temporalmente las consultas desde este nodo en la nube. Por favor, reintente en un minuto."
+            }, ensure_ascii=False)
+            
+        return json.dumps({
+            "error_tecnico_web": error_str
+        }, ensure_ascii=False)
 
 def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
     """Busca una carpeta por nombre en Google Drive y lista explícitamente todos los archivos contenidos dentro de ella (por ID de padre)."""
