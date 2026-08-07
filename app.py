@@ -596,9 +596,9 @@ def tool_leer_contenido_drive(file_id):
         print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
-# --- NUEVAS CAPACIDADES INCORPORADAS (BLINDADAS) ---
+# --- NUEVA CAPACIDAD WEB BLINDADA CONTRA EXCEPCIONES DE RED ---
 def tool_busqueda_web(query):
-    """Realiza una búsqueda en la web con control absoluto de excepciones ante restricciones de IP en la nube."""
+    """Realiza una búsqueda web con control absoluto de excepciones ante restricciones de IP en la nube."""
     try:
         resultados = []
         with DDGS() as ddgs:
@@ -619,12 +619,6 @@ def tool_busqueda_web(query):
     except Exception as error:
         error_str = str(error)
         print(f"[ADVERTENCIA TÉCNICA DE RED - WEB]: {error_str}")
-        if "ratelimit" in error_str.lower() or "202" in error_str or "timeout" in error_str.lower():
-            return json.dumps({
-                "estado": "pausa de seguridad del buscador",
-                "detalle": "El servicio de búsqueda web ha limitado temporalmente las consultas desde este nodo en la nube. Por favor, reintente en un minuto."
-            }, ensure_ascii=False)
-            
         return json.dumps({
             "error_tecnico_web": error_str
         }, ensure_ascii=False)
