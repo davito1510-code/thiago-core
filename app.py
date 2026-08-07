@@ -45,8 +45,8 @@ SYSTEM_INSTRUCTION = (
     "(como crear un evento en el calendario o enviar un correo electrónico) si la herramienta correspondiente "
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
-    "Google Calendar (lectura y creación de eventos con invitación a asistentes) y Google Drive "
-    "(búsqueda global en carpetas, ordenadores sincronizados y lectura analítica de textos). "
+    "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes) y Google Drive "
+    "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos). "
     "Cuando el profesor mencione 'mis mails', 'mi calendario' o 'mi drive', comprende de inmediato que se refiere "
     "a su cuenta personal autorizada y ejecuta las herramientas de forma autónoma sin titubear."
 )
@@ -473,16 +473,17 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         return json.dumps({"error_tecnico_gmail_envio": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
-    """Consulta los próximos eventos y citas agendados en Google Calendar."""
+    """Consulta los próximos eventos y citas agendados en Google Calendar con alta capacidad (hasta 50 eventos para cubrir semanas completas)."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
         ahora = datetime.datetime.now(timezone.utc).isoformat()
         
+        # Ampliamos maxResults a 50 para evitar el corte prematuro en consultas semanales
         respuesta_eventos = servicio.events().list(
             calendarId='primary',
             timeMin=ahora,
-            maxResults=10,
+            maxResults=50,
             singleEvents=True,
             orderBy='startTime'
         ).execute()
@@ -555,6 +556,60 @@ def tool_buscar_archivos_drive(query=""):
         print(f"[ERROR CRÍTICO DRIVE BÚSQUEDA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive": str(error)}, ensure_ascii=False)
 
+def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
+    """Busca una carpeta por nombre en Google Drive y lista explícitamente todos los archivos contenidos dentro de ella (por ID de padre)."""
+    try:
+        credenciales = obtener_credenciales()
+        servicio = build('drive', 'v3', credentials=credenciales)
+        
+        nombre_limpio = nombre_carpeta.strip().replace("'", "\\'")
+        # Paso 1: Buscar la carpeta por su nombre para obtener su ID único
+        query_carpeta = f"name = '{nombre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        res_carpeta = servicio.files().list(q=query_carpeta, pageSize=5, fields="files(id, name)").execute()
+        carpetas = res_carpeta.get('files', [])
+        
+        if not carpetas:
+            # Búsqueda flexible si no hay coincidencia exacta
+            query_flex = f"name contains '{nombre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            res_flex = servicio.files().list(q=query_flex, pageSize=5, fields="files(id, name)").execute()
+            carpetas = res_flex.get('files', [])
+            if not carpetas:
+                return json.dumps({"resultado": f"No se encontró ninguna carpeta con el nombre '{nombre_carpeta}' en Google Drive."}, ensure_ascii=False)
+        
+        carpeta_id = carpetas[0]['id']
+        nombre_encontrado = carpetas[0]['name']
+        
+        # Paso 2: Listar los archivos cuyo padre sea esta carpeta
+        query_hijos = f"'{carpeta_id}' in parents and trashed = false"
+        res_hijos = servicio.files().list(
+            q=query_hijos,
+            pageSize=50,
+            fields="files(id, name, mimeType, modifiedTime)",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            orderBy="name asc"
+        ).execute()
+        
+        hijos = res_hijos.get('files', [])
+        if not hijos:
+            return json.dumps({"resultado": f"La carpeta '{nombre_encontrado}' (ID: {carpeta_id}) existe pero se encuentra vacía o no tiene elementos accesibles."}, ensure_ascii=False)
+            
+        lista_elementos = []
+        for hijo in hijos:
+            es_carpeta = hijo.get('mimeType') == 'application/vnd.google-apps.folder'
+            tipo_elem = "Carpeta" if es_carpeta else "Archivo"
+            lista_elementos.append({
+                "tipo": tipo_elem,
+                "id": hijo.get('id'),
+                "nombre": hijo.get('name'),
+                "modificado": hijo.get('modifiedTime')
+            })
+            
+        return json.dumps({"carpeta_madre": nombre_encontrado, "id_carpeta": carpeta_id, "elementos": lista_elementos}, ensure_ascii=False)
+    except Exception as error:
+        print(f"[ERROR CRÍTICO LISTAR CARPETA DRIVE]: {repr(error)}")
+        return json.dumps({"error_tecnico_listar_carpeta": str(error)}, ensure_ascii=False)
+
 def tool_leer_contenido_drive(file_id):
     """Extrae el contenido textual de un archivo específico de Google Drive."""
     try:
@@ -604,6 +659,7 @@ available_tools = {
     "tool_consultar_calendario": tool_consultar_calendario,
     "tool_crear_evento_calendario": tool_crear_evento_calendario,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
+    "tool_listar_contenido_carpeta_drive": tool_listar_contenido_carpeta_drive,
     "tool_leer_contenido_drive": tool_leer_contenido_drive
 }
 
@@ -635,7 +691,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_consultar_calendario",
-            "description": "Consulta los próximos eventos y citas registrados en el Google Calendar del profesor David Villarreal."
+            "description": "Consulta los próximos eventos y citas registrados en el Google Calendar del profesor David Villarreal (ampliado hasta 50 eventos para cobertura semanal completa)."
         }
     },
     {
@@ -672,6 +728,20 @@ openai_tools_definition = [
                     "query": {"type": "string", "description": "Término de búsqueda."}
                 },
                 "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_listar_contenido_carpeta_drive",
+            "description": "Busca una carpeta específica por su nombre en Google Drive y lista todos los archivos y subcarpetas que contiene en su interior.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre_carpeta": {"type": "string", "description": "Nombre exacto o aproximado de la carpeta (ej. '3382', 'ACTIVIDADES')."}
+                },
+                "required": ["nombre_carpeta"]
             }
         }
     },
