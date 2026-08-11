@@ -48,7 +48,7 @@ SYSTEM_INSTRUCTION = (
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
     "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos) y BÚSQUEDA WEB AUTÓNOMA (DuckDuckGo). "
-    "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o solicite información externa, "
+    "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o requiera información externa, "
     "ejecuta las herramientas de forma autónoma sin titubear."
 )
 
@@ -598,7 +598,7 @@ def tool_leer_contenido_drive(file_id):
 
 # --- CAPACIDAD WEB BLINDADA CONTRA EXCEPCIONES DE RED ---
 def tool_busqueda_web(query):
-    """Realiza una búsqueda web protegida con manejo estricto de excepciones."""
+    """Realiza una búsqueda web protegida con manejo estricto de excepciones para evitar caídas del servidor."""
     try:
         resultados = []
         with DDGS() as ddgs:
@@ -620,7 +620,8 @@ def tool_busqueda_web(query):
         error_str = str(error)
         print(f"[ADVERTENCIA TÉCNICA DE RED - WEB]: {error_str}")
         return json.dumps({
-            "error_tecnico_web": error_str
+            "estado": "restriccion_red_nube",
+            "detalle": "El buscador web ha limitado temporalmente las consultas desde este servidor en la nube. Por favor, intente reformular la consulta."
         }, ensure_ascii=False)
 
 def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
@@ -843,7 +844,7 @@ def chat():
             if "choices" in respuesta_json:
                 mensaje_respuesta = respuesta_json["choices"][0]["message"]
                 
-                # Bucle cognitivo de ejecución de herramientas autónomas
+                # Bucle cognitivo de ejecución de herramientas autónomas con manejo blindado
                 if "tool_calls" in mensaje_respuesta:
                     mensajes_api.append(mensaje_respuesta)
                     for llamada_herramienta in mensaje_respuesta["tool_calls"]:
