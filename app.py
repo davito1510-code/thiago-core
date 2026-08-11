@@ -4,7 +4,7 @@
  NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL
  Arquitectura de Conectividad Total y Razonamiento Cognitivo Avanzado
  Desarrollado exclusivamente para el Prof. David Villarreal
- Abogado, Babalawo de Ifa tradicional yoruba, Batuque Isesa, profesor de inglés,
+ Abogado, Babalawo de Ifá tradicional yoruba, Batuque Isesa, profesor de inglés,
  magíster en relaciones internacionales, masón y doctorando.
 =============================================================================
 """
@@ -39,7 +39,7 @@ historial_conversacion = []
 # =============================================================================
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal. "
-    "El profesor es abogado en la CABA, Babalawo de Ifa tradicional yoruba, Batuque Isesa, "
+    "El profesor es abogado en la CABA, Babalawo de Ifá tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
     "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción "
@@ -48,8 +48,8 @@ SYSTEM_INSTRUCTION = (
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
     "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos) y BÚSQUEDA WEB AUTÓNOMA (DuckDuckGo). "
-    "Cuando el profesor mencione 'mis mails', 'mi calendario' o 'mi drive', comprende de inmediato que se refiere "
-    "a su cuenta personal autorizada y ejecuta las herramientas de forma autónoma sin titubear."
+    "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o solicite información externa, "
+    "ejecuta las herramientas de forma autónoma sin titubear."
 )
 
 # =============================================================================
@@ -596,9 +596,9 @@ def tool_leer_contenido_drive(file_id):
         print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
-# --- NUEVAS CAPACIDADES INCORPORADAS (BLINDADAS) ---
+# --- CAPACIDAD WEB BLINDADA CONTRA EXCEPCIONES DE RED ---
 def tool_busqueda_web(query):
-    """Realiza una búsqueda web con control absoluto de excepciones ante restricciones de IP en la nube."""
+    """Realiza una búsqueda web protegida con manejo estricto de excepciones."""
     try:
         resultados = []
         with DDGS() as ddgs:
