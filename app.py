@@ -42,12 +42,14 @@ SYSTEM_INSTRUCTION = (
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
     "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción "
-    "(como crear un evento en el calendario, leer un documento o enviar un correo electrónico) si la herramienta correspondiente "
+    "(como crear una carpeta, un evento en el calendario, leer un documento o enviar un correo electrónico) si la herramienta correspondiente "
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
-    "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos) y BÚSQUEDA WEB AUTÓNOMA. "
+    "(búsqueda global, navegación estricta por jerarquía de carpetas, lectura analítica de textos y creación efectiva de carpetas) y BÚSQUEDA WEB AUTÓNOMA. "
     "Cuando el profesor solicite leer un documento, utiliza 'tool_leer_contenido_drive' pasándole el nombre exacto del archivo. "
+    "Cuando el profesor solicite crear una carpeta (por ejemplo, 'Thiago' dentro de 'ACTIVIDADES'), ejecuta de inmediato "
+    "la herramienta 'tool_crear_carpeta_drive'. "
     "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o requiera información externa, "
     "ejecuta las herramientas de forma autónoma sin titubear."
 )
@@ -377,7 +379,7 @@ HTML_TEMPLATE = """
 # SECCIÓN 4: GESTIÓN DE CREDENCIALES OAUTH Y CONECTIVIDAD GOOGLE
 # =============================================================================
 def obtener_credenciales():
-    """Construye y refresca las credenciales OAuth aplicando sanitización estricta."""
+    """Construye y refresca las credenciales OAuth aplicando sanitización estricta (Escritura total habilitada)."""
     r_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip().strip('"\'')
     c_id = os.getenv("GOOGLE_CLIENT_ID", "").strip().strip('"\'')
     c_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip().strip('"\'')
@@ -392,7 +394,7 @@ def obtener_credenciales():
             'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.send',
             'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/drive.readonly'
+            'https://www.googleapis.com/auth/drive'
         ]
     )
     if not credenciales.valid:
@@ -685,6 +687,34 @@ def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
         print(f"[ERROR CRÍTICO LISTAR CARPETA DRIVE]: {repr(error)}")
         return json.dumps({"error_tecnico_listar_carpeta": str(error)}, ensure_ascii=False)
 
+def tool_crear_carpeta_drive(nombre_carpeta, nombre_carpeta_padre="ACTIVIDADES"):
+    """Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica."""
+    try:
+        credenciales = obtener_credenciales()
+        servicio = build('drive', 'v3', credentials=credenciales)
+        
+        nombre_padre_limpio = nombre_carpeta_padre.strip().replace("'", "\\'")
+        q_padre = f"name = '{nombre_padre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        res_padre = servicio.files().list(q=q_padre, pageSize=1, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+        carpetas_padre = res_padre.get('files', [])
+        
+        if not carpetas_padre:
+            return json.dumps({"error": f"No se encontró la carpeta padre '{nombre_carpeta_padre}'."}, ensure_ascii=False)
+        
+        id_padre = carpetas_padre[0]['id']
+        
+        metadata = {
+            'name': nombre_carpeta.strip(),
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [id_padre]
+        }
+        
+        creada = servicio.files().create(body=metadata, fields='id, name, webViewLink', supportsAllDrives=True).execute()
+        return json.dumps({"resultado": f"Carpeta '{nombre_carpeta}' creada con éxito dentro de '{nombre_carpeta_padre}'.", "link": creada.get('webViewLink')}, ensure_ascii=False)
+    except Exception as error:
+        print(f"[ERROR CRÍTICO CREAR CARPETA DRIVE]: {repr(error)}")
+        return json.dumps({"error_tecnico_crear_carpeta": str(error)}, ensure_ascii=False)
+
 # =============================================================================
 # SECCIÓN 6: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
 # =============================================================================
@@ -696,7 +726,8 @@ available_tools = {
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
     "tool_leer_contenido_drive": tool_leer_contenido_drive,
     "tool_busqueda_web": tool_busqueda_web,
-    "tool_listar_contenido_carpeta_drive": tool_listar_contenido_carpeta_drive
+    "tool_listar_contenido_carpeta_drive": tool_listar_contenido_carpeta_drive,
+    "tool_crear_carpeta_drive": tool_crear_carpeta_drive
 }
 
 openai_tools_definition = [
@@ -776,6 +807,21 @@ openai_tools_definition = [
                 "type": "object",
                 "properties": {
                     "nombre_carpeta": {"type": "string", "description": "Nombre exacto o aproximado de la carpeta (ej. '3382', 'ACTIVIDADES')."}
+                },
+                "required": ["nombre_carpeta"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_crear_carpeta_drive",
+            "description": "Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre_carpeta": {"type": "string", "description": "Nombre de la carpeta a crear, por ejemplo 'Thiago'."},
+                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre de la carpeta contenedora, por defecto 'ACTIVIDADES'."}
                 },
                 "required": ["nombre_carpeta"]
             }
