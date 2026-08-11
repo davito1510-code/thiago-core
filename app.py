@@ -24,7 +24,6 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import pypdf
 import docx
-from duckduckgo_search import DDGS
 
 # =============================================================================
 # SECCIÓN 1: INICIALIZACIÓN Y CONFIGURACIÓN DEL SERVIDOR FLASK
@@ -47,7 +46,7 @@ SYSTEM_INSTRUCTION = (
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
-    "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos) y BÚSQUEDA WEB AUTÓNOMA (DuckDuckGo). "
+    "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos) y BÚSQUEDA WEB AUTÓNOMA. "
     "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o requiera información externa, "
     "ejecuta las herramientas de forma autónoma sin titubear."
 )
@@ -474,7 +473,7 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         return json.dumps({"error_tecnico_gmail_envio": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
-    """Consulta los próximos eventos y citas agendados en Google Calendar con alta capacidad (hasta 50 eventos para cubrir semanas completas)."""
+    """Consulta los próximos eventos y citas agendados en Google Calendar con alta capacidad."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
@@ -596,32 +595,46 @@ def tool_leer_contenido_drive(file_id):
         print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
-# --- CAPACIDAD WEB BLINDADA CONTRA EXCEPCIONES DE RED ---
 def tool_busqueda_web(query):
-    """Realiza una búsqueda web protegida con manejo estricto de excepciones para evitar caídas del servidor."""
+    """Realiza una búsqueda web estructurada y estable utilizando la API oficial de Serper."""
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        return json.dumps({"error": "La clave de la API de Serper no está configurada en las variables de entorno del servidor."}, ensure_ascii=False)
+
+    url = "https://google.serper.dev/search"
+    payload = json.dumps({
+        "q": query,
+        "gl": "ar",
+        "hl": "es"
+    })
+    headers = {
+        'X-API-KEY': api_key,
+        'Content-Type': 'application/json'
+    }
+
     try:
+        response = requests.post(url, headers=headers, data=payload, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        
         resultados = []
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=5):
-                resultados.append({
-                    "title": r.get("title", "Sin título"),
-                    "href": r.get("href", "Sin enlace"),
-                    "body": r.get("body", "Sin descripción")
-                })
+        for r in data.get("organic", [])[:5]:
+            resultados.append({
+                "title": r.get("title", "Sin título"),
+                "href": r.get("link", "Sin enlace"),
+                "body": r.get("snippet", "Sin descripción")
+            })
         
         if not resultados:
-            return json.dumps({
-                "resultado": "La consulta no arrojó resultados activos en la web en este momento."
-            }, ensure_ascii=False)
+            return json.dumps({"resultado": "La consulta no arrojó resultados relevantes."}, ensure_ascii=False)
             
         return json.dumps(resultados, ensure_ascii=False)
         
     except Exception as error:
-        error_str = str(error)
-        print(f"[ADVERTENCIA TÉCNICA DE RED - WEB]: {error_str}")
+        print(f"[ERROR CRÍTICO RED - SERPER]: {repr(error)}")
         return json.dumps({
-            "estado": "restriccion_red_nube",
-            "detalle": "El buscador web ha limitado temporalmente las consultas desde este servidor en la nube. Por favor, intente reformular la consulta."
+            "estado": "error_conexion_api",
+            "detalle": "Fallo en la comunicación con el proveedor de búsqueda oficial."
         }, ensure_ascii=False)
 
 def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
@@ -789,7 +802,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_busqueda_web",
-            "description": "Realiza una búsqueda en internet mediante DuckDuckGo para extraer información actualizada.",
+            "description": "Realiza una búsqueda en internet mediante la API oficial para extraer información actualizada.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -844,7 +857,7 @@ def chat():
             if "choices" in respuesta_json:
                 mensaje_respuesta = respuesta_json["choices"][0]["message"]
                 
-                # Bucle cognitivo de ejecución de herramientas autónomas con manejo blindado
+                # Bucle cognitivo de ejecución de herramientas autónomas
                 if "tool_calls" in mensaje_respuesta:
                     mensajes_api.append(mensaje_respuesta)
                     for llamada_herramienta in mensaje_respuesta["tool_calls"]:
@@ -854,14 +867,14 @@ def chat():
                         except Exception:
                             argumentos_funcion = {}
                         
-                        if nombre_funcion in available_tools:
-                            try:
+                        try:
+                            if nombre_funcion in available_tools:
                                 resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
-                            except Exception as tool_err:
-                                print(f"[ERROR EN EJECUCIÓN DE TOOL {nombre_funcion}]: {repr(tool_err)}")
-                                resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
-                        else:
-                            resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo operativo."}, ensure_ascii=False)
+                            else:
+                                resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo operativo."}, ensure_ascii=False)
+                        except Exception as tool_err:
+                            print(f"[ERROR EN EJECUCIÓN DE TOOL {nombre_funcion}]: {repr(tool_err)}")
+                            resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
                             
                         mensajes_api.append({
                             "role": "tool",
