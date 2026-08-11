@@ -42,11 +42,12 @@ SYSTEM_INSTRUCTION = (
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
     "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción "
-    "(como crear un evento en el calendario o enviar un correo electrónico) si la herramienta correspondiente "
+    "(como crear un evento en el calendario, leer un documento o enviar un correo electrónico) si la herramienta correspondiente "
     "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
     "(búsqueda global, navegación estricta por jerarquía de carpetas y lectura analítica de textos) y BÚSQUEDA WEB AUTÓNOMA. "
+    "Cuando el profesor solicite leer un documento, utiliza 'tool_leer_contenido_drive' pasándole el nombre exacto del archivo. "
     "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o requiera información externa, "
     "ejecuta las herramientas de forma autónoma sin titubear."
 )
@@ -556,22 +557,34 @@ def tool_buscar_archivos_drive(query=""):
         return json.dumps({"error_tecnico_drive": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae el contenido textual de un archivo específico de Google Drive."""
+    """Extrae texto de un archivo. Si recibe el nombre en vez del ID, busca automáticamente el ID real."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
         
-        metadatos = servicio.files().get(fileId=file_id, fields="name, mimeType").execute()
+        # Resolución de ID inteligente para solventar nombres enviados por la IA
+        if len(file_id) < 15 or " " in file_id or "." in file_id:
+            nombre_limpio = file_id.strip().replace("'", "\\'")
+            q_busqueda = f"name contains '{nombre_limpio}' and trashed = false"
+            res_busqueda = servicio.files().list(q=q_busqueda, pageSize=1, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            archivos_encontrados = res_busqueda.get('files', [])
+            if not archivos_encontrados:
+                return json.dumps({"error": f"No se pudo resolver el identificador para el documento: {file_id}"}, ensure_ascii=False)
+            id_real_archivo = archivos_encontrados[0]['id']
+        else:
+            id_real_archivo = file_id
+
+        metadatos = servicio.files().get(fileId=id_real_archivo, fields="name, mimeType").execute()
         nombre_archivo = metadatos.get('name')
         tipo_mime = metadatos.get('mimeType')
         
         texto_extraido = ""
         
         if 'application/vnd.google-apps.document' in tipo_mime:
-            solicitud = servicio.files().export_media(fileId=file_id, mimeType='text/plain')
+            solicitud = servicio.files().export_media(fileId=id_real_archivo, mimeType='text/plain')
             texto_extraido = solicitud.execute().decode('utf-8', errors='ignore')
         else:
-            solicitud = servicio.files().get_media(fileId=file_id)
+            solicitud = servicio.files().get_media(fileId=id_real_archivo)
             buffer_memoria = io.BytesIO()
             descargador = MediaIoBaseDownload(buffer_memoria, solicitud)
             terminado = False
@@ -581,36 +594,32 @@ def tool_leer_contenido_drive(file_id):
             
             if 'pdf' in tipo_mime.lower():
                 lector_pdf = pypdf.PdfReader(buffer_memoria)
-                for numero_pagina in range(min(10, len(lector_pdf.pages))):
+                for numero_pagina in range(min(20, len(lector_pdf.pages))):
                     pagina_texto = lector_pdf.pages[numero_pagina].extract_text()
                     if pagina_texto:
                         texto_extraido += pagina_texto + "\n"
             elif 'wordprocessingml' in tipo_mime.lower():
                 documento_word = docx.Document(buffer_memoria)
-                for parrafo in documento_word.paragraphs[:100]:
+                for parrafo in documento_word.paragraphs[:200]:
                     texto_extraido += parrafo.text + "\n"
                     
-        return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:8000]}, ensure_ascii=False)
+        if not texto_extraido:
+            return json.dumps({"archivo": nombre_archivo, "contenido": "El archivo se abrió correctamente, pero no se pudo extraer texto."}, ensure_ascii=False)
+            
+        return json.dumps({"archivo": nombre_archivo, "contenido": texto_extraido[:15000]}, ensure_ascii=False)
     except Exception as error:
         print(f"[ERROR CRÍTICO DRIVE LECTURA DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
 def tool_busqueda_web(query):
-    """Realiza una búsqueda web estructurada y estable utilizando la API oficial de Serper."""
+    """Realiza una búsqueda web estructurada utilizando Serper API."""
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:
-        return json.dumps({"error": "La clave de la API de Serper no está configurada en las variables de entorno del servidor."}, ensure_ascii=False)
+        return json.dumps({"error": "La clave SERPER_API_KEY no está configurada en Render."}, ensure_ascii=False)
 
     url = "https://google.serper.dev/search"
-    payload = json.dumps({
-        "q": query,
-        "gl": "ar",
-        "hl": "es"
-    })
-    headers = {
-        'X-API-KEY': api_key,
-        'Content-Type': 'application/json'
-    }
+    payload = json.dumps({"q": query, "gl": "ar", "hl": "es"})
+    headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
 
     try:
         response = requests.post(url, headers=headers, data=payload, timeout=15)
@@ -626,19 +635,16 @@ def tool_busqueda_web(query):
             })
         
         if not resultados:
-            return json.dumps({"resultado": "La consulta no arrojó resultados relevantes."}, ensure_ascii=False)
+            return json.dumps({"resultado": "La consulta no arrojó resultados."}, ensure_ascii=False)
             
         return json.dumps(resultados, ensure_ascii=False)
         
     except Exception as error:
         print(f"[ERROR CRÍTICO RED - SERPER]: {repr(error)}")
-        return json.dumps({
-            "estado": "error_conexion_api",
-            "detalle": "Fallo en la comunicación con el proveedor de búsqueda oficial."
-        }, ensure_ascii=False)
+        return json.dumps({"estado": "error_conexion_api", "detalle": str(error)}, ensure_ascii=False)
 
 def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
-    """Busca una carpeta por nombre en Google Drive y lista explícitamente todos los archivos contenidos dentro de ella (por ID de padre)."""
+    """Busca y lista archivos contenidos en una carpeta de Google Drive."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -653,37 +659,28 @@ def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
             res_flex = servicio.files().list(q=query_flex, pageSize=5, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
             carpetas = res_flex.get('files', [])
             if not carpetas:
-                return json.dumps({"resultado": f"No se encontró ninguna carpeta con el nombre '{nombre_carpeta}' en Google Drive."}, ensure_ascii=False)
+                return json.dumps({"resultado": f"No se encontró carpeta con el nombre '{nombre_carpeta}'."}, ensure_ascii=False)
         
         carpeta_id = carpetas[0]['id']
         nombre_encontrado = carpetas[0]['name']
         
         query_hijos = f"'{carpeta_id}' in parents and trashed = false"
         res_hijos = servicio.files().list(
-            q=query_hijos,
-            pageSize=50,
-            fields="files(id, name, mimeType, modifiedTime)",
-            includeItemsFromAllDrives=True,
-            supportsAllDrives=True,
-            orderBy="name asc"
+            q=query_hijos, pageSize=50, fields="files(id, name, mimeType, modifiedTime)",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, orderBy="name asc"
         ).execute()
         
         hijos = res_hijos.get('files', [])
         if not hijos:
-            return json.dumps({"resultado": f"La carpeta '{nombre_encontrado}' (ID: {carpeta_id}) existe pero se encuentra vacía o no tiene elementos accesibles."}, ensure_ascii=False)
+            return json.dumps({"resultado": f"La carpeta '{nombre_encontrado}' existe pero está vacía."}, ensure_ascii=False)
             
         lista_elementos = []
         for hijo in hijos:
             es_carpeta = hijo.get('mimeType') == 'application/vnd.google-apps.folder'
             tipo_elem = "Carpeta" if es_carpeta else "Archivo"
-            lista_elementos.append({
-                "tipo": tipo_elem,
-                "id": hijo.get('id'),
-                "nombre": hijo.get('name'),
-                "modificado": hijo.get('modifiedTime')
-            })
+            lista_elementos.append({"tipo": tipo_elem, "id": hijo.get('id'), "nombre": hijo.get('name')})
             
-        return json.dumps({"carpeta_madre": nombre_encontrado, "id_carpeta": carpeta_id, "elementos": lista_elementos}, ensure_ascii=False)
+        return json.dumps({"carpeta_madre": nombre_encontrado, "elementos": lista_elementos}, ensure_ascii=False)
     except Exception as error:
         print(f"[ERROR CRÍTICO LISTAR CARPETA DRIVE]: {repr(error)}")
         return json.dumps({"error_tecnico_listar_carpeta": str(error)}, ensure_ascii=False)
@@ -788,11 +785,11 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto de un archivo específico de Drive dado su ID único.",
+            "description": "Extrae el texto de un archivo específico de Drive dado su ID único o el nombre exacto del archivo.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive."}
+                    "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive o su nombre completo."}
                 },
                 "required": ["file_id"]
             }
@@ -802,7 +799,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_busqueda_web",
-            "description": "Realiza una búsqueda en internet mediante la API oficial para extraer información actualizada.",
+            "description": "Realiza una búsqueda oficial en internet mediante la API para extraer información actualizada.",
             "parameters": {
                 "type": "object",
                 "properties": {
