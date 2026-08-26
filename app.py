@@ -41,15 +41,17 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifá tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción "
-    "(como crear una carpeta, un evento en el calendario, leer un documento o enviar un correo electrónico) si la herramienta correspondiente "
-    "no ha sido invocada con éxito y su respuesta oficial no ha sido procesada. "
+    "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción. "
+    "REGLA CRÍTICA DE BÚSQUEDA WEB: ESTÁ TERMINANTEMENTE PROHIBIDO inventar, deducir o simular URLs. "
+    "Solo puedes proporcionar enlaces que la herramienta 'tool_busqueda_web' te haya devuelto explícitamente en el campo 'href'. "
+    "Si la primera búsqueda devuelve directorios gubernamentales o residencias de lujo, DEBES ejecutar nuevas búsquedas "
+    "con operadores específicos (ej. 'asociación civil', 'sin fines de lucro', 'ONG') antes de responder. "
+    "Si no encuentras sitios reales, informa al profesor que no hay datos verificables, pero jamás inventes una URL. "
     "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
-    "(búsqueda global, navegación estricta por jerarquía de carpetas, lectura analítica de textos y creación efectiva de carpetas) y BÚSQUEDA WEB AUTÓNOMA. "
+    "(búsqueda global, navegación estricta por jerarquía de carpetas, lectura analítica de textos y creación de carpetas) y BÚSQUEDA WEB AUTÓNOMA. "
     "Cuando el profesor solicite leer un documento, utiliza 'tool_leer_contenido_drive' pasándole el nombre exacto del archivo. "
-    "Cuando el profesor solicite crear una carpeta (por ejemplo, 'Thiago' dentro de 'ACTIVIDADES'), ejecuta de inmediato "
-    "la herramienta 'tool_crear_carpeta_drive'. "
+    "Cuando el profesor solicite crear una carpeta, ejecuta de inmediato la herramienta 'tool_crear_carpeta_drive'. "
     "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o requiera información externa, "
     "ejecuta las herramientas de forma autónoma sin titubear."
 )
@@ -379,7 +381,7 @@ HTML_TEMPLATE = """
 # SECCIÓN 4: GESTIÓN DE CREDENCIALES OAUTH Y CONECTIVIDAD GOOGLE
 # =============================================================================
 def obtener_credenciales():
-    """Construye y refresca las credenciales OAuth aplicando sanitización estricta (Escritura total habilitada)."""
+    """Construye y refresca las credenciales OAuth aplicando sanitización estricta."""
     r_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip().strip('"\'')
     c_id = os.getenv("GOOGLE_CLIENT_ID", "").strip().strip('"\'')
     c_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip().strip('"\'')
@@ -629,7 +631,7 @@ def tool_busqueda_web(query):
         data = response.json()
         
         resultados = []
-        for r in data.get("organic", [])[:5]:
+        for r in data.get("organic", [])[:10]:
             resultados.append({
                 "title": r.get("title", "Sin título"),
                 "href": r.get("link", "Sin enlace"),
