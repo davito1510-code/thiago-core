@@ -42,12 +42,12 @@ SYSTEM_INSTRUCTION = (
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
     "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción. "
-    "REGLA CRÍTICA DE BÚSQUEDA WEB: ESTÁ TERMINANTEMENTE PROHIBIDO inventar, deducir o simular URLs. "
-    "Solo puedes proporcionar enlaces que la herramienta 'tool_busqueda_web' te haya devuelto explícitamente en el campo 'href'. "
-    "Si la primera búsqueda devuelve directorios gubernamentales o residencias de lujo, DEBES ejecutar nuevas búsquedas "
-    "con operadores específicos (ej. 'asociación civil', 'sin fines de lucro', 'ONG') antes de responder. "
-    "Si no encuentras sitios reales, informa al profesor que no hay datos verificables, pero jamás inventes una URL. "
-    "Tienes acceso total y autorizado a la cuenta del Prof. David Villarreal en Gmail (lectura y envío de correos), "
+    "REGLA CRÍTICA DE LECTURA Y BÚSQUEDA: ESTÁ TERMINANTEMENTE PROHIBIDO inventar resúmenes, URLs o contenidos. "
+    "Si el profesor te pide resumir un archivo (o nueve planchas), ESTÁS OBLIGADO a ejecutar 'tool_leer_contenido_drive' "
+    "para extraer el texto real. Jamás utilices tu conocimiento general para fabricar un resumen basándote solo en el título. "
+    "Si se te pide procesar tareas masivas (ej. leer 9 documentos), debes procesarlos iterativamente ejecutando las herramientas necesarias "
+    "sin intentar adivinar la información. Si no logras extraer el texto de un documento, infórmalo con franqueza. "
+    "Tienes acceso total y autorizado a la cuenta en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
     "(búsqueda global, navegación estricta por jerarquía de carpetas, lectura analítica de textos y creación de carpetas) y BÚSQUEDA WEB AUTÓNOMA. "
     "Cuando el profesor solicite leer un documento, utiliza 'tool_leer_contenido_drive' pasándole el nombre exacto del archivo. "
@@ -253,7 +253,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos, de lectura analítica y señal visual operativos. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos iterativos, lectura analítica y señal visual operativos. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -631,7 +631,7 @@ def tool_busqueda_web(query):
         data = response.json()
         
         resultados = []
-        for r in data.get("organic", [])[:10]:
+        for r in data.get("organic", [])[:5]:
             resultados.append({
                 "title": r.get("title", "Sin título"),
                 "href": r.get("link", "Sin enlace"),
@@ -817,21 +817,6 @@ openai_tools_definition = [
     {
         "type": "function",
         "function": {
-            "name": "tool_crear_carpeta_drive",
-            "description": "Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "nombre_carpeta": {"type": "string", "description": "Nombre de la carpeta a crear, por ejemplo 'Thiago'."},
-                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre de la carpeta contenedora, por defecto 'ACTIVIDADES'."}
-                },
-                "required": ["nombre_carpeta"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "tool_leer_contenido_drive",
             "description": "Extrae el texto de un archivo específico de Drive dado su ID único o el nombre exacto del archivo.",
             "parameters": {
@@ -854,6 +839,21 @@ openai_tools_definition = [
                     "query": {"type": "string", "description": "Consulta de búsqueda para la web."}
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_crear_carpeta_drive",
+            "description": "Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre_carpeta": {"type": "string", "description": "Nombre de la carpeta a crear, por ejemplo 'Thiago'."},
+                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre de la carpeta contenedora, por defecto 'ACTIVIDADES'."}
+                },
+                "required": ["nombre_carpeta"]
             }
         }
     }
@@ -888,70 +888,66 @@ def chat():
             url_api = "https://api.openai.com/v1/chat/completions"
             cabeceras = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
             
-            payload_inicial = {
-                "model": "gpt-4o-mini",
-                "messages": mensajes_api,
-                "tools": openai_tools_definition,
-                "tool_choice": "auto",
-                "temperature": 0.1
-            }
-            
-            respuesta = requests.post(url_api, json=payload_inicial, headers=cabeceras)
-            respuesta_json = respuesta.json()
-            
-            if "choices" in respuesta_json:
-                mensaje_respuesta = respuesta_json["choices"][0]["message"]
+            texto_respuesta = ""
+            # Bucle cognitivo iterativo para soportar tareas en lotes (como leer 9 planchas sin colapsar)
+            for iteracion in range(5):
+                payload_inicial = {
+                    "model": "gpt-4o-mini",
+                    "messages": mensajes_api,
+                    "tools": openai_tools_definition,
+                    "tool_choice": "auto",
+                    "temperature": 0.1
+                }
                 
-                # Bucle cognitivo de ejecución de herramientas autónomas
-                if "tool_calls" in mensaje_respuesta:
-                    mensajes_api.append(mensaje_respuesta)
-                    for llamada_herramienta in mensaje_respuesta["tool_calls"]:
-                        nombre_funcion = llamada_herramienta["function"]["name"]
-                        try:
-                            argumentos_funcion = json.loads(llamada_herramienta["function"]["arguments"] or "{}")
-                        except Exception:
-                            argumentos_funcion = {}
-                        
-                        try:
-                            if nombre_funcion in available_tools:
-                                resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
-                            else:
-                                resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo operativo."}, ensure_ascii=False)
-                        except Exception as tool_err:
-                            print(f"[ERROR EN EJECUCIÓN DE TOOL {nombre_funcion}]: {repr(tool_err)}")
-                            resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
+                respuesta = requests.post(url_api, json=payload_inicial, headers=cabeceras)
+                respuesta_json = respuesta.json()
+                
+                if "choices" in respuesta_json:
+                    mensaje_respuesta = respuesta_json["choices"][0]["message"]
+                    
+                    if "tool_calls" in mensaje_respuesta:
+                        mensajes_api.append(mensaje_respuesta)
+                        for llamada_herramienta in mensaje_respuesta["tool_calls"]:
+                            nombre_funcion = llamada_herramienta["function"]["name"]
+                            try:
+                                argumentos_funcion = json.loads(llamada_herramienta["function"]["arguments"] or "{}")
+                            except Exception:
+                                argumentos_funcion = {}
                             
-                        mensajes_api.append({
-                            "role": "tool",
-                            "tool_call_id": llamada_herramienta["id"],
-                            "content": resultado_ejecucion
-                        })
-                    
-                    # Segunda iteración cognitiva para consolidar la respuesta operativa
-                    payload_seguimiento = {
-                        "model": "gpt-4o-mini",
-                        "messages": mensajes_api,
-                        "temperature": 0.1
-                    }
-                    respuesta_final = requests.post(url_api, json=payload_seguimiento, headers=cabeceras)
-                    json_final = respuesta_final.json()
-                    
-                    if "choices" in json_final:
-                        texto_respuesta = json_final["choices"][0]["message"].get("content", "Ejecución operativa completada con éxito.")
+                            try:
+                                if nombre_funcion in available_tools:
+                                    resultado_ejecucion = available_tools[nombre_funcion](**argumentos_funcion)
+                                else:
+                                    resultado_ejecucion = json.dumps({"error": "Herramienta no registrada en el núcleo operativo."}, ensure_ascii=False)
+                            except Exception as tool_err:
+                                print(f"[ERROR EN EJECUCIÓN DE TOOL {nombre_funcion}]: {repr(tool_err)}")
+                                resultado_ejecucion = json.dumps({"error_ejecucion": str(tool_err)}, ensure_ascii=False)
+                                
+                            mensajes_api.append({
+                                "role": "tool",
+                                "tool_call_id": llamada_herramienta["id"],
+                                "content": resultado_ejecucion
+                            })
+                        # Permitir que el ciclo for vuelva a consultar a OpenAI con los resultados extraídos
+                        continue 
                     else:
-                        texto_respuesta = f"Error en la consolidación operativa: {str(json_final)}"
+                        # Si no hay más llamadas a herramientas, consolidamos la respuesta final
+                        texto_respuesta = mensaje_respuesta.get("content", "Ejecución operativa completada con éxito.")
+                        break
                 else:
-                    texto_respuesta = mensaje_respuesta.get("content", "Directiva procesada.")
+                    texto_respuesta = f"Error en la consolidación operativa: {str(respuesta_json)}"
+                    break
 
-                historial_conversacion.append({"role": "user", "content": mensaje_usuario})
-                historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
-                if len(historial_conversacion) > 12:
-                    historial_conversacion = historial_conversacion[-12:]
-                    
-                return jsonify({"reply": texto_respuesta})
-            else:
-                return jsonify({"reply": f"Error en la respuesta del motor cognitivo: {str(respuesta_json)}"})
+            if not texto_respuesta:
+                texto_respuesta = "He procesado una cantidad máxima de acciones por seguridad en esta interacción. Por favor, solicite el análisis restante en un nuevo mensaje."
+
+            historial_conversacion.append({"role": "user", "content": mensaje_usuario})
+            historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
+            if len(historial_conversacion) > 12:
+                historial_conversacion = historial_conversacion[-12:]
                 
+            return jsonify({"reply": texto_respuesta})
+            
         except Exception as error_critico:
             print(f"[ERROR CRÍTICO CHAT GENERAL]: {repr(error_critico)}")
             return jsonify({"reply": f"Error crítico en el núcleo operativo: {str(error_critico)}"})
