@@ -42,6 +42,9 @@ SYSTEM_INSTRUCTION = (
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
     "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción. "
+    "REGLA CRÍTICA OPERATIVA: ESTÁ TERMINANTEMENTE PROHIBIDO pedirle al profesor que realice una tarea manualmente "
+    "(como crear una hoja de cálculo, documento o carpeta). Si el profesor te pide crear un archivo o Excel, "
+    "ESTÁS OBLIGADO a ejecutar 'tool_crear_archivo_drive' de inmediato. Jamás delegues la tarea. "
     "REGLA CRÍTICA DE LECTURA Y BÚSQUEDA: ESTÁ TERMINANTEMENTE PROHIBIDO inventar resúmenes, URLs o contenidos. "
     "Si el profesor te pide resumir un archivo (o nueve planchas), ESTÁS OBLIGADO a ejecutar 'tool_leer_contenido_drive' "
     "para extraer el texto real. Jamás utilices tu conocimiento general para fabricar un resumen basándote solo en el título. "
@@ -49,7 +52,7 @@ SYSTEM_INSTRUCTION = (
     "sin intentar adivinar la información. Si no logras extraer el texto de un documento, infórmalo con franqueza. "
     "Tienes acceso total y autorizado a la cuenta en Gmail (lectura y envío de correos), "
     "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
-    "(búsqueda global, navegación estricta por jerarquía de carpetas, lectura analítica de textos y creación de carpetas) y BÚSQUEDA WEB AUTÓNOMA. "
+    "(búsqueda global, navegación estricta por jerarquía de carpetas, lectura analítica de textos, creación de carpetas y archivos) y BÚSQUEDA WEB AUTÓNOMA. "
     "Cuando el profesor solicite leer un documento, utiliza 'tool_leer_contenido_drive' pasándole el nombre exacto del archivo. "
     "Cuando el profesor solicite crear una carpeta, ejecuta de inmediato la herramienta 'tool_crear_carpeta_drive'. "
     "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o requiera información externa, "
@@ -253,7 +256,7 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos iterativos, lectura analítica y señal visual operativos. ¿Qué directiva procesamos?</div>
+            <div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos iterativos, creación documental y señal visual operativos. ¿Qué directiva procesamos?</div>
         </div>
 
         <div class="input-group">
@@ -717,6 +720,41 @@ def tool_crear_carpeta_drive(nombre_carpeta, nombre_carpeta_padre="ACTIVIDADES")
         print(f"[ERROR CRÍTICO CREAR CARPETA DRIVE]: {repr(error)}")
         return json.dumps({"error_tecnico_crear_carpeta": str(error)}, ensure_ascii=False)
 
+def tool_crear_archivo_drive(nombre_archivo, tipo_archivo, nombre_carpeta_padre=""):
+    """Crea un nuevo archivo nativo (Documento u Hoja de Cálculo) en Google Drive."""
+    try:
+        credenciales = obtener_credenciales()
+        servicio = build('drive', 'v3', credentials=credenciales)
+        
+        padres = []
+        if nombre_carpeta_padre:
+            nombre_padre_limpio = nombre_carpeta_padre.strip().replace("'", "\\'")
+            q_padre = f"name = '{nombre_padre_limpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            res_padre = servicio.files().list(q=q_padre, pageSize=1, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            carpetas_padre = res_padre.get('files', [])
+            if not carpetas_padre:
+                return json.dumps({"error": f"No se encontró la carpeta padre '{nombre_carpeta_padre}'."}, ensure_ascii=False)
+            padres.append(carpetas_padre[0]['id'])
+        
+        mime_types = {
+            'hoja_calculo': 'application/vnd.google-apps.spreadsheet',
+            'documento': 'application/vnd.google-apps.document'
+        }
+        mime_type_google = mime_types.get(tipo_archivo.lower(), 'application/vnd.google-apps.document')
+        
+        metadata = {
+            'name': nombre_archivo.strip(),
+            'mimeType': mime_type_google
+        }
+        if padres:
+            metadata['parents'] = padres
+        
+        creado = servicio.files().create(body=metadata, fields='id, name, webViewLink', supportsAllDrives=True).execute()
+        return json.dumps({"resultado": f"Archivo tipo '{tipo_archivo}' con nombre '{nombre_archivo}' creado con éxito.", "link": creado.get('webViewLink')}, ensure_ascii=False)
+    except Exception as error:
+        print(f"[ERROR CRÍTICO CREAR ARCHIVO DRIVE]: {repr(error)}")
+        return json.dumps({"error_tecnico_crear_archivo": str(error)}, ensure_ascii=False)
+
 # =============================================================================
 # SECCIÓN 6: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
 # =============================================================================
@@ -729,7 +767,8 @@ available_tools = {
     "tool_leer_contenido_drive": tool_leer_contenido_drive,
     "tool_busqueda_web": tool_busqueda_web,
     "tool_listar_contenido_carpeta_drive": tool_listar_contenido_carpeta_drive,
-    "tool_crear_carpeta_drive": tool_crear_carpeta_drive
+    "tool_crear_carpeta_drive": tool_crear_carpeta_drive,
+    "tool_crear_archivo_drive": tool_crear_archivo_drive
 }
 
 openai_tools_definition = [
@@ -817,6 +856,37 @@ openai_tools_definition = [
     {
         "type": "function",
         "function": {
+            "name": "tool_crear_carpeta_drive",
+            "description": "Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre_carpeta": {"type": "string", "description": "Nombre de la carpeta a crear, por ejemplo 'Thiago'."},
+                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre de la carpeta contenedora, por defecto 'ACTIVIDADES'."}
+                },
+                "required": ["nombre_carpeta"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_crear_archivo_drive",
+            "description": "Crea un nuevo archivo nativo (Documento de texto u Hoja de cálculo tipo Excel) en Google Drive dentro de una carpeta padre específica.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre_archivo": {"type": "string", "description": "Nombre del archivo a crear."},
+                    "tipo_archivo": {"type": "string", "enum": ["hoja_calculo", "documento"], "description": "Seleccionar 'hoja_calculo' para Excel/Sheets o 'documento' para Word/Docs."},
+                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre exacto de la carpeta contenedora, por ejemplo 'Módulo Contable'."}
+                },
+                "required": ["nombre_archivo", "tipo_archivo"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "tool_leer_contenido_drive",
             "description": "Extrae el texto de un archivo específico de Drive dado su ID único o el nombre exacto del archivo.",
             "parameters": {
@@ -839,21 +909,6 @@ openai_tools_definition = [
                     "query": {"type": "string", "description": "Consulta de búsqueda para la web."}
                 },
                 "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "tool_crear_carpeta_drive",
-            "description": "Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "nombre_carpeta": {"type": "string", "description": "Nombre de la carpeta a crear, por ejemplo 'Thiago'."},
-                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre de la carpeta contenedora, por defecto 'ACTIVIDADES'."}
-                },
-                "required": ["nombre_carpeta"]
             }
         }
     }
