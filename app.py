@@ -31,7 +31,6 @@ import docx
 app = Flask(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-historial_conversacion = []
 
 # =============================================================================
 # SECCIÓN 2: INSTRUCCIÓN DE SISTEMA (SYSTEM PROMPT) Y PERFIL DE IDENTIDAD
@@ -200,12 +199,18 @@ HTML_TEMPLATE = """
             transform: scale(0.98);
         }
 
+        .btn-icon {
+            padding: 12px 16px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         #micBtn {
             background-color: var(--border-color);
             color: var(--accent-blue);
             border: 1px solid var(--accent-blue);
-            font-size: 1.1rem;
-            padding: 12px 16px;
         }
 
         #micBtn.active {
@@ -213,6 +218,15 @@ HTML_TEMPLATE = """
             color: white;
             border-color: var(--active-mic);
             animation: pulse-mic 1.5s infinite;
+        }
+
+        #clearBtn {
+            background-color: var(--error-color);
+            color: white;
+        }
+
+        #clearBtn:hover {
+            background-color: #dc2626;
         }
 
         @keyframes pulse-mic {
@@ -256,11 +270,12 @@ HTML_TEMPLATE = """
         <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional</div>
         
         <div class="chat-box" id="chatBox">
-            <div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos iterativos, creación documental y señal visual operativos. ¿Qué directiva procesamos?</div>
+            <!-- El contenido se cargará dinámicamente desde el LocalStorage -->
         </div>
 
         <div class="input-group">
-            <button type="button" id="micBtn" onclick="alternarEscucha()" title="Hablar con Thiago">🎤</button>
+            <button type="button" id="clearBtn" class="btn-icon" onclick="borrarMemoria()" title="Purgar Memoria Persistente">🗑️</button>
+            <button type="button" id="micBtn" class="btn-icon" onclick="alternarEscucha()" title="Hablar con Thiago">🎤</button>
             <input type="text" id="userInput" placeholder="Escriba su consulta o hable..." autofocus>
             <button type="button" onclick="enviarMensaje()">Enviar</button>
         </div>
@@ -269,6 +284,34 @@ HTML_TEMPLATE = """
     <script>
         let recognition;
         let escuchando = false;
+        
+        // Memoria Persistente en el Cliente (Navegador)
+        let memoriaLocal = JSON.parse(localStorage.getItem('thiago_memoria')) || [];
+
+        function renderizarHistorial() {
+            const chatBox = document.getElementById('chatBox');
+            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos iterativos, creación documental y memoria persistente operativos. ¿Qué directiva procesamos?</div>';
+            
+            memoriaLocal.forEach(msg => {
+                if (msg.role === 'user') {
+                    chatBox.innerHTML += `<div class="message user-msg">${msg.content}</div>`;
+                } else if (msg.role === 'assistant') {
+                    chatBox.innerHTML += `<div class="message ai-msg">${msg.content}</div>`;
+                }
+            });
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // Cargar el historial al iniciar la página
+        window.onload = renderizarHistorial;
+
+        function borrarMemoria() {
+            if (confirm("¿Desea purgar la memoria persistente de Thiago? Esto borrará el contexto de la investigación actual y reiniciará el agente.")) {
+                localStorage.removeItem('thiago_memoria');
+                memoriaLocal = [];
+                renderizarHistorial();
+            }
+        }
 
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -340,6 +383,7 @@ HTML_TEMPLATE = """
             const texto = input.value.trim();
             if (!texto) return;
 
+            // Mostrar el mensaje en la interfaz
             chatBox.innerHTML += `<div class="message user-msg">${texto}</div>`;
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -355,14 +399,22 @@ HTML_TEMPLATE = """
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
+                // Seleccionamos un contexto máximo de los últimos 12 mensajes para no desbordar el token limit
+                const contextoParaEnviar = memoriaLocal.slice(-12);
+
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: texto })
+                    body: JSON.stringify({ message: texto, history: contextoParaEnviar })
                 });
                 const data = await response.json();
                 document.getElementById(idCarga).remove();
                 
+                // Actualizar y persistir la memoria local
+                memoriaLocal.push({ role: 'user', content: texto });
+                memoriaLocal.push({ role: 'assistant', content: data.reply });
+                localStorage.setItem('thiago_memoria', JSON.stringify(memoriaLocal));
+
                 chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
                 hablarTexto(data.reply);
@@ -569,7 +621,6 @@ def tool_leer_contenido_drive(file_id):
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
         
-        # Resolución de ID inteligente para solventar nombres enviados por la IA
         if len(file_id) < 15 or " " in file_id or "." in file_id:
             nombre_limpio = file_id.strip().replace("'", "\\'")
             q_busqueda = f"name contains '{nombre_limpio}' and trashed = false"
@@ -888,7 +939,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto de un archivo específico de Drive dado su ID único o el nombre exacto del archivo.",
+            "description": "Extrae el texto del archivo en Drive dado su ID único o nombre.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -925,26 +976,31 @@ def index():
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """
-    Controlador principal del agente autónomo con motor cognitivo de multi-razonamiento.
-    Gestiona las peticiones, ejecuta llamadas a herramientas y procesa excepciones con precisión.
+    Controlador principal del agente autónomo.
+    Implementa arquitectura Stateless: el contexto lo provee el cliente (navegador).
     """
-    global historial_conversacion
     datos_solicitud = request.get_json() or {}
     mensaje_usuario = datos_solicitud.get("message", "").strip()
+    historial_cliente = datos_solicitud.get("history", [])
+    
     if not mensaje_usuario:
         return jsonify({"reply": "Indique una directiva operativa válida."})
 
     if OPENAI_API_KEY:
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
-            mensajes_api.extend(historial_conversacion)
+            
+            # Inyectamos el historial persistente proveniente del navegador
+            for msg in historial_cliente:
+                if msg.get("role") in ["user", "assistant"] and msg.get("content"):
+                    mensajes_api.append({"role": msg["role"], "content": msg["content"]})
+                    
             mensajes_api.append({"role": "user", "content": mensaje_usuario})
 
             url_api = "https://api.openai.com/v1/chat/completions"
             cabeceras = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
             
             texto_respuesta = ""
-            # Bucle cognitivo iterativo para soportar tareas en lotes (como leer 9 planchas sin colapsar)
             for iteracion in range(5):
                 payload_inicial = {
                     "model": "gpt-4o-mini",
@@ -983,10 +1039,8 @@ def chat():
                                 "tool_call_id": llamada_herramienta["id"],
                                 "content": resultado_ejecucion
                             })
-                        # Permitir que el ciclo for vuelva a consultar a OpenAI con los resultados extraídos
                         continue 
                     else:
-                        # Si no hay más llamadas a herramientas, consolidamos la respuesta final
                         texto_respuesta = mensaje_respuesta.get("content", "Ejecución operativa completada con éxito.")
                         break
                 else:
@@ -996,11 +1050,6 @@ def chat():
             if not texto_respuesta:
                 texto_respuesta = "He procesado una cantidad máxima de acciones por seguridad en esta interacción. Por favor, solicite el análisis restante en un nuevo mensaje."
 
-            historial_conversacion.append({"role": "user", "content": mensaje_usuario})
-            historial_conversacion.append({"role": "assistant", "content": texto_respuesta})
-            if len(historial_conversacion) > 12:
-                historial_conversacion = historial_conversacion[-12:]
-                
             return jsonify({"reply": texto_respuesta})
             
         except Exception as error_critico:
