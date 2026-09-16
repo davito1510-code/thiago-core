@@ -45,13 +45,12 @@ SYSTEM_INSTRUCTION = (
     "ESTÁS OBLIGADO a buscar y proporcionar los FALLOS REALES (sentencias dictadas por tribunales). "
     "ESTÁ TERMINANTEMENTE PROHIBIDO confundir jurisprudencia con 'doctrina' (artículos de opinión o análisis sobre los fallos). "
     "ESTÁ TERMINANTEMENTE PROHIBIDO utilizar o citar Wikipedia, blogs, o fuentes no oficiales para temas jurídicos, académicos o históricos. "
-    "Si realizas una búsqueda web, DEBES priorizar dominios oficiales de tribunales (ej. HUDOC para el TEDH, EUR-Lex para el Tribunal de Justicia de la UE, CSJN en Argentina) o bases de datos jurídicas primarias. "
+    "Si realizas una búsqueda web, DEBES priorizar dominios oficiales de tribunales o bases de datos jurídicas primarias. "
     "Toda respuesta que cite obras o sitios debe seguir las normas APA. "
-    "REGLA CRÍTICA OPERATIVA: ESTÁ TERMINANTEMENTE PROHIBIDO pedirle al profesor que realice una tarea manualmente "
-    "(como crear una hoja de cálculo, documento o carpeta). Si el profesor te pide crear un archivo, ejecútalo de inmediato. "
-    "REGLA CRÍTICA DE LECTURA Y BÚSQUEDA: ESTÁ TERMINANTEMENTE PROHIBIDO inventar resúmenes, URLs o contenidos. "
-    "Si el profesor te pide resumir un archivo (o documentos múltiples), ESTÁS OBLIGADO a ejecutar 'tool_leer_contenido_drive' "
-    "para extraer el texto real de forma iterativa. Si no logras extraer el texto, infórmalo con franqueza. "
+    "REGLA CRÍTICA OPERATIVA: ESTÁ TERMINANTEMENTE PROHIBIDO pedirle al profesor que realice una tarea manualmente. "
+    "Si el profesor te pide crear un archivo, ejecútalo de inmediato mediante tus herramientas. "
+    "REGLA CRÍTICA DE LECTURA Y BÚSQUEDA: ESTÁ TERMINANTEMENTE PROHIBIDO inventar resúmenes. "
+    "Si recibes un documento adjunto en el chat, analízalo con rigor. Si debes leer algo de Drive, extrae el texto real iterativamente. "
     "Tienes acceso total a Gmail, Google Calendar, Google Drive y BÚSQUEDA WEB AUTÓNOMA. "
     "Ejecuta las herramientas de forma autónoma sin titubear."
 )
@@ -78,6 +77,7 @@ HTML_TEMPLATE = """
             --border-color: #334155;
             --error-color: #f87171;
             --active-mic: #ef4444;
+            --success-color: #10b981;
         }
 
         body {
@@ -160,6 +160,7 @@ HTML_TEMPLATE = """
         .input-group {
             display: flex;
             gap: 10px;
+            align-items: center;
         }
 
         input[type="text"] {
@@ -203,6 +204,16 @@ HTML_TEMPLATE = """
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        #attachBtn {
+            background-color: var(--border-color);
+            color: var(--text-main);
+            border: 1px solid #475569;
+        }
+        
+        #attachBtn:hover {
+            background-color: #475569;
         }
 
         #micBtn {
@@ -252,11 +263,6 @@ HTML_TEMPLATE = """
         .working-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .working-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
-        @keyframes pulse-dot {
-            0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
-            40% { transform: scale(1.0); opacity: 1; }
-        }
-
         .error-text {
             color: var(--error-color);
         }
@@ -273,6 +279,8 @@ HTML_TEMPLATE = """
 
         <div class="input-group">
             <button type="button" id="clearBtn" class="btn-icon" onclick="borrarMemoria()" title="Purgar Memoria Persistente">🗑️</button>
+            <input type="file" id="fileInput" style="display: none;" onchange="procesarArchivoLocal(this)" accept=".pdf,.docx,.txt,.csv">
+            <button type="button" id="attachBtn" class="btn-icon" onclick="document.getElementById('fileInput').click()" title="Adjuntar Archivo Local">📎</button>
             <button type="button" id="micBtn" class="btn-icon" onclick="alternarEscucha()" title="Hablar con Thiago">🎤</button>
             <input type="text" id="userInput" placeholder="Escriba su consulta o hable..." autofocus>
             <button type="button" onclick="enviarMensaje()">Enviar</button>
@@ -282,17 +290,27 @@ HTML_TEMPLATE = """
     <script>
         let recognition;
         let escuchando = false;
+        let archivoAdjuntoTexto = "";
+        let archivoAdjuntoNombre = "";
         
         // Memoria Persistente en el Cliente (Navegador)
         let memoriaLocal = JSON.parse(localStorage.getItem('thiago_memoria')) || [];
 
         function renderizarHistorial() {
             const chatBox = document.getElementById('chatBox');
-            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos blindados, exclusión de Wikipedia y exigencia jurisprudencial operativas. ¿Qué directiva procesamos?</div>';
+            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos operativos, ingesta documental y memoria persistente activos. ¿Qué directiva procesamos?</div>';
             
             memoriaLocal.forEach(msg => {
                 if (msg.role === 'user') {
-                    chatBox.innerHTML += `<div class="message user-msg">${msg.content}</div>`;
+                    // Limpieza visual si el mensaje contenía un adjunto inyectado
+                    let displayTexto = msg.content;
+                    if (displayTexto.includes("[Se adjunta el archivo:")) {
+                        let partes = displayTexto.split("Directiva del Profesor:");
+                        if (partes.length > 1) {
+                            displayTexto = `📎 Archivo enviado.\n${partes[1].trim()}`;
+                        }
+                    }
+                    chatBox.innerHTML += `<div class="message user-msg">${displayTexto}</div>`;
                 } else if (msg.role === 'assistant') {
                     chatBox.innerHTML += `<div class="message ai-msg">${msg.content}</div>`;
                 }
@@ -300,14 +318,52 @@ HTML_TEMPLATE = """
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        // Cargar el historial al iniciar la página
         window.onload = renderizarHistorial;
 
         function borrarMemoria() {
             if (confirm("¿Desea purgar la memoria persistente de Thiago? Esto borrará el contexto de la investigación actual y reiniciará el agente.")) {
                 localStorage.removeItem('thiago_memoria');
                 memoriaLocal = [];
+                archivoAdjuntoTexto = "";
+                archivoAdjuntoNombre = "";
+                document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
                 renderizarHistorial();
+            }
+        }
+
+        async function procesarArchivoLocal(input) {
+            if (input.files && input.files[0]) {
+                const archivo = input.files[0];
+                const formData = new FormData();
+                formData.append('file', archivo);
+                
+                const inputTexto = document.getElementById('userInput');
+                const placeholderOriginal = inputTexto.placeholder;
+                inputTexto.placeholder = "Procesando documento...";
+                inputTexto.disabled = true;
+                
+                try {
+                    const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        archivoAdjuntoTexto = data.text;
+                        archivoAdjuntoNombre = data.filename;
+                        inputTexto.placeholder = `📎 Archivo cargado: ${archivoAdjuntoNombre}. Indique qué hacer con él...`;
+                    } else {
+                        alert("Error al procesar: " + data.error);
+                        inputTexto.placeholder = placeholderOriginal;
+                    }
+                } catch (error) {
+                    alert("Error de conexión al cargar el archivo.");
+                    inputTexto.placeholder = placeholderOriginal;
+                }
+                inputTexto.disabled = false;
+                inputTexto.focus();
+                input.value = ''; // Resetear el input file
             }
         }
 
@@ -353,14 +409,20 @@ HTML_TEMPLATE = """
 
         function detenerEscuchaVisual() {
             document.getElementById('micBtn').classList.remove('active');
-            document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
+            if(archivoAdjuntoTexto !== "") {
+                document.getElementById('userInput').placeholder = `📎 Archivo cargado: ${archivoAdjuntoNombre}. Indique qué hacer con él...`;
+            } else {
+                document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
+            }
             escuchando = false;
         }
 
         function hablarTexto(texto) {
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(texto);
+                // SANEAMIENTO DE SÍNTESIS DE VOZ: Se eliminan caracteres Markdown para lectura natural
+                let textoLimpio = texto.replace(/[*_#`~|\/]/g, '');
+                const utterance = new SpeechSynthesisUtterance(textoLimpio);
                 utterance.lang = 'es-AR';
                 utterance.rate = 1.0;
                 window.speechSynthesis.speak(utterance);
@@ -379,17 +441,29 @@ HTML_TEMPLATE = """
             const input = document.getElementById('userInput');
             const chatBox = document.getElementById('chatBox');
             const texto = input.value.trim();
-            if (!texto) return;
+            if (!texto && archivoAdjuntoTexto === "") return;
 
-            // Mostrar el mensaje en la interfaz
-            chatBox.innerHTML += `<div class="message user-msg">${texto}</div>`;
+            let textoUsuarioVisual = texto || "Analiza el documento adjunto.";
+            let payloadCognitivo = textoUsuarioVisual;
+
+            // Si hay un archivo adjunto, se ensambla en el contexto cognitivo
+            if (archivoAdjuntoTexto !== "") {
+                chatBox.innerHTML += `<div class="message user-msg">📎 Archivo enviado: ${archivoAdjuntoNombre}<br>${textoUsuarioVisual}</div>`;
+                payloadCognitivo = `[Se adjunta el archivo: ${archivoAdjuntoNombre}]\n\nContenido extraído del documento:\n${archivoAdjuntoTexto}\n\nDirectiva del Profesor:\n${textoUsuarioVisual}`;
+                archivoAdjuntoTexto = "";
+                archivoAdjuntoNombre = "";
+                input.placeholder = "Escriba su consulta o hable...";
+            } else {
+                chatBox.innerHTML += `<div class="message user-msg">${textoUsuarioVisual}</div>`;
+            }
+            
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
             const idCarga = "carga-" + Date.now();
             chatBox.innerHTML += `
                 <div id="${idCarga}" class="message ai-msg" style="display: flex; align-items: center;">
-                    <span>Thiago está procesando cognitivamente la directiva en Google Workspace</span>
+                    <span>Thiago está procesando cognitivamente la directiva</span>
                     <div class="working-indicator">
                         <span></span><span></span><span></span>
                     </div>
@@ -397,19 +471,19 @@ HTML_TEMPLATE = """
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
-                // Seleccionamos un contexto máximo de los últimos 12 mensajes para no desbordar el token limit
+                // Se envía el historial completo limitado para no exceder tokens
                 const contextoParaEnviar = memoriaLocal.slice(-12);
 
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: texto, history: contextoParaEnviar })
+                    body: JSON.stringify({ message: payloadCognitivo, history: contextoParaEnviar })
                 });
                 const data = await response.json();
                 document.getElementById(idCarga).remove();
                 
-                // Actualizar y persistir la memoria local
-                memoriaLocal.push({ role: 'user', content: texto });
+                // Se guarda el payload complejo en la memoria local para que la IA lo recuerde
+                memoriaLocal.push({ role: 'user', content: payloadCognitivo });
                 memoriaLocal.push({ role: 'assistant', content: data.reply });
                 localStorage.setItem('thiago_memoria', JSON.stringify(memoriaLocal));
 
@@ -418,7 +492,7 @@ HTML_TEMPLATE = """
                 hablarTexto(data.reply);
             } catch (error) {
                 document.getElementById(idCarga).remove();
-                chatBox.innerHTML += `<div class="message ai-msg error-text">Error crítico de comunicación con el núcleo.</div>`;
+                chatBox.innerHTML += `<div class="message ai-msg error-text">Error crítico de comunicación con el núcleo operativo.</div>`;
             }
         }
 
@@ -431,7 +505,45 @@ HTML_TEMPLATE = """
 """
 
 # =============================================================================
-# SECCIÓN 4: GESTIÓN DE CREDENCIALES OAUTH Y CONECTIVIDAD GOOGLE
+# SECCIÓN 4: GESTIÓN DE ARCHIVOS LOCALES (ENDPOINT DE CARGA)
+# =============================================================================
+@app.route('/api/upload', methods=['POST'])
+def procesar_carga_archivo():
+    """Recibe un archivo local, extrae su texto y lo retorna para inyección cognitiva."""
+    if 'file' not in request.files:
+        return jsonify({"success": False, "error": "No se recibió ningún archivo en la petición."}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"success": False, "error": "Nombre de archivo vacío."}), 400
+    
+    filename = file.filename.lower()
+    texto_extraido = ""
+    
+    try:
+        if filename.endswith('.pdf'):
+            lector_pdf = pypdf.PdfReader(file)
+            for page in lector_pdf.pages:
+                ext_text = page.extract_text()
+                if ext_text:
+                    texto_extraido += ext_text + "\n"
+        elif filename.endswith('.docx'):
+            doc = docx.Document(file)
+            for para in doc.paragraphs:
+                texto_extraido += para.text + "\n"
+        elif filename.endswith('.txt') or filename.endswith('.csv'):
+            texto_extraido = file.read().decode('utf-8', errors='ignore')
+        else:
+            return jsonify({"success": False, "error": "Formato no soportado. Suba PDF, DOCX, TXT o CSV."}), 400
+        
+        # Límite de seguridad para evitar desbordamiento del contexto de OpenAI
+        texto_extraido = texto_extraido[:35000]
+        return jsonify({"success": True, "filename": file.filename, "text": texto_extraido})
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Error de lectura: {str(e)}"}), 500
+
+# =============================================================================
+# SECCIÓN 5: GESTIÓN DE CREDENCIALES OAUTH Y CONECTIVIDAD GOOGLE
 # =============================================================================
 def obtener_credenciales():
     """Construye y refresca las credenciales OAuth aplicando sanitización estricta."""
@@ -481,10 +593,9 @@ def extraer_cuerpo_gmail(payload):
     return cuerpo_texto[:4000] if cuerpo_texto else "Sin cuerpo de texto legible."
 
 # =============================================================================
-# SECCIÓN 5: HERRAMIENTAS AUTÓNOMAS (TOOLS) DE LECTURA Y ESCRITURA
+# SECCIÓN 6: HERRAMIENTAS AUTÓNOMAS (TOOLS) DE LECTURA Y ESCRITURA
 # =============================================================================
 def tool_listar_correos():
-    """Consulta los últimos correos electrónicos de la bandeja de entrada de Gmail."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('gmail', 'v1', credentials=credenciales)
@@ -514,7 +625,6 @@ def tool_listar_correos():
         return json.dumps({"error_tecnico_gmail": str(error)}, ensure_ascii=False)
 
 def tool_enviar_correo(destinatario, asunto, cuerpo):
-    """Envía un correo electrónico a través de la infraestructura de Gmail."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('gmail', 'v1', credentials=credenciales)
@@ -531,18 +641,13 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         return json.dumps({"error_tecnico_gmail_envio": str(error)}, ensure_ascii=False)
 
 def tool_consultar_calendario():
-    """Consulta los próximos eventos y citas agendados en Google Calendar con alta capacidad."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
         ahora = datetime.datetime.now(timezone.utc).isoformat()
         
         respuesta_eventos = servicio.events().list(
-            calendarId='primary',
-            timeMin=ahora,
-            maxResults=50,
-            singleEvents=True,
-            orderBy='startTime'
+            calendarId='primary', timeMin=ahora, maxResults=50, singleEvents=True, orderBy='startTime'
         ).execute()
         eventos = respuesta_eventos.get('items', [])
         if not eventos:
@@ -562,7 +667,6 @@ def tool_consultar_calendario():
         return json.dumps({"error_tecnico_calendar": str(error)}, ensure_ascii=False)
 
 def tool_crear_evento_calendario(summary, start_time, end_time, location="", description="", attendees=None):
-    """Crea un evento en Google Calendar con asistentes opcionales."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
@@ -588,7 +692,6 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
         return json.dumps({"error_tecnico_calendar_creacion": str(error)}, ensure_ascii=False)
 
 def tool_buscar_archivos_drive(query=""):
-    """Busca archivos o carpetas en Google Drive aplicando sanitización estricta de cadenas."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -597,12 +700,8 @@ def tool_buscar_archivos_drive(query=""):
         condicion = f"name contains '{consulta_limpia}' and trashed = false" if consulta_limpia else "trashed = false"
         
         resultados = servicio.files().list(
-            q=condicion,
-            pageSize=30,
-            fields="files(id, name, mimeType, parents)",
-            includeItemsFromAllDrives=True,
-            supportsAllDrives=True,
-            orderBy="modifiedTime desc"
+            q=condicion, pageSize=30, fields="files(id, name, mimeType, parents)",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, orderBy="modifiedTime desc"
         ).execute()
         
         elementos = resultados.get('files', [])
@@ -614,7 +713,6 @@ def tool_buscar_archivos_drive(query=""):
         return json.dumps({"error_tecnico_drive": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
-    """Extrae texto de un archivo. Si recibe el nombre en vez del ID, busca automáticamente el ID real."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -668,16 +766,12 @@ def tool_leer_contenido_drive(file_id):
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
 def tool_busqueda_web(query):
-    """Realiza una búsqueda web estructurada utilizando Serper API. Incluye inyección de filtros avanzados."""
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:
         return json.dumps({"error": "La clave SERPER_API_KEY no está configurada en Render."}, ensure_ascii=False)
 
     url = "https://google.serper.dev/search"
-    
-    # Inyección de operadores avanzados para garantizar rigor académico (excluir Wikipedia)
     consulta_blindada = f"{query} -site:wikipedia.org -site:es.wikipedia.org"
-    
     payload = json.dumps({"q": consulta_blindada, "gl": "ar", "hl": "es"})
     headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
 
@@ -687,7 +781,6 @@ def tool_busqueda_web(query):
         data = response.json()
         
         resultados = []
-        # Ampliamos a 10 resultados para asegurar hallazgos oficiales
         for r in data.get("organic", [])[:10]:
             resultados.append({
                 "title": r.get("title", "Sin título"),
@@ -705,7 +798,6 @@ def tool_busqueda_web(query):
         return json.dumps({"estado": "error_conexion_api", "detalle": str(error)}, ensure_ascii=False)
 
 def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
-    """Busca y lista archivos contenidos en una carpeta de Google Drive."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -747,7 +839,6 @@ def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
         return json.dumps({"error_tecnico_listar_carpeta": str(error)}, ensure_ascii=False)
 
 def tool_crear_carpeta_drive(nombre_carpeta, nombre_carpeta_padre="ACTIVIDADES"):
-    """Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -775,7 +866,6 @@ def tool_crear_carpeta_drive(nombre_carpeta, nombre_carpeta_padre="ACTIVIDADES")
         return json.dumps({"error_tecnico_crear_carpeta": str(error)}, ensure_ascii=False)
 
 def tool_crear_archivo_drive(nombre_archivo, tipo_archivo, nombre_carpeta_padre=""):
-    """Crea un nuevo archivo nativo (Documento u Hoja de Cálculo) en Google Drive."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -810,7 +900,7 @@ def tool_crear_archivo_drive(nombre_archivo, tipo_archivo, nombre_carpeta_padre=
         return json.dumps({"error_tecnico_crear_archivo": str(error)}, ensure_ascii=False)
 
 # =============================================================================
-# SECCIÓN 6: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
+# SECCIÓN 7: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
 # =============================================================================
 available_tools = {
     "tool_listar_correos": tool_listar_correos,
@@ -853,7 +943,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_consultar_calendario",
-            "description": "Consulta los próximos eventos y citas registrados en el Google Calendar del profesor David Villarreal (ampliado hasta 50 eventos para cobertura semanal completa)."
+            "description": "Consulta los próximos eventos y citas registrados en el Google Calendar."
         }
     },
     {
@@ -883,7 +973,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_buscar_archivos_drive",
-            "description": "Busca archivos o carpetas en Google Drive por palabra clave (ej. 'bibliografia', 'masonia').",
+            "description": "Busca archivos o carpetas en Google Drive por palabra clave.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -901,7 +991,7 @@ openai_tools_definition = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "nombre_carpeta": {"type": "string", "description": "Nombre exacto o aproximado de la carpeta (ej. '3382', 'ACTIVIDADES')."}
+                    "nombre_carpeta": {"type": "string", "description": "Nombre exacto o aproximado de la carpeta."}
                 },
                 "required": ["nombre_carpeta"]
             }
@@ -942,7 +1032,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto del archivo en Drive dado su ID único o nombre.",
+            "description": "Extrae el texto de un archivo específico de Drive dado su ID único o el nombre exacto del archivo.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -969,19 +1059,14 @@ openai_tools_definition = [
 ]
 
 # =============================================================================
-# SECCIÓN 7: RUTAS Y CONTROLADORES DE LA APLICACIÓN WEB FLASK (LOOP COGNITIVO)
+# SECCIÓN 8: CONTROLADORES PRINCIPALES (LOOP COGNITIVO)
 # =============================================================================
 @app.route("/")
 def index():
-    """Renderiza la interfaz gráfica principal de Thiago."""
     return render_template_string(HTML_TEMPLATE)
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    """
-    Controlador principal del agente autónomo.
-    Implementa arquitectura Stateless: el contexto lo provee el cliente (navegador).
-    """
     datos_solicitud = request.get_json() or {}
     mensaje_usuario = datos_solicitud.get("message", "").strip()
     historial_cliente = datos_solicitud.get("history", [])
@@ -993,7 +1078,6 @@ def chat():
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
             
-            # Inyectamos el historial persistente proveniente del navegador
             for msg in historial_cliente:
                 if msg.get("role") in ["user", "assistant"] and msg.get("content"):
                     mensajes_api.append({"role": msg["role"], "content": msg["content"]})
@@ -1061,8 +1145,5 @@ def chat():
     else:
         return jsonify({"reply": "Falta configurar la clave OPENAI_API_KEY en el entorno del servidor."})
 
-# =============================================================================
-# SECCIÓN 8: PUNTO DE ENTRADA DEL SERVIDOR
-# =============================================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
