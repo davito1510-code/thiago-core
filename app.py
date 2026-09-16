@@ -40,22 +40,20 @@ SYSTEM_INSTRUCTION = (
     "El profesor es abogado en la CABA, Babalawo de Ifá tradicional yoruba, Batuque Isesa, "
     "profesor de inglés, magíster en relaciones internacionales y masón. "
     "Tus respuestas deben destacar por su rigor académico, precisión técnica y corrección gramatical absoluta. "
-    "REGLA DE ORO INQUEBRANTABLE: Jamás inventes, finjas o simules haber ejecutado una acción. "
+    "REGLA DE ORO INQUEBRANTABLE 1: Jamás inventes, finjas o simules haber ejecutado una acción. "
+    "REGLA DE ORO INQUEBRANTABLE 2: EXIGENCIA ACADÉMICA Y JURÍDICA. Si el profesor solicita 'jurisprudencia', "
+    "ESTÁS OBLIGADO a buscar y proporcionar los FALLOS REALES (sentencias dictadas por tribunales). "
+    "ESTÁ TERMINANTEMENTE PROHIBIDO confundir jurisprudencia con 'doctrina' (artículos de opinión o análisis sobre los fallos). "
+    "ESTÁ TERMINANTEMENTE PROHIBIDO utilizar o citar Wikipedia, blogs, o fuentes no oficiales para temas jurídicos, académicos o históricos. "
+    "Si realizas una búsqueda web, DEBES priorizar dominios oficiales de tribunales (ej. HUDOC para el TEDH, EUR-Lex para el Tribunal de Justicia de la UE, CSJN en Argentina) o bases de datos jurídicas primarias. "
+    "Toda respuesta que cite obras o sitios debe seguir las normas APA. "
     "REGLA CRÍTICA OPERATIVA: ESTÁ TERMINANTEMENTE PROHIBIDO pedirle al profesor que realice una tarea manualmente "
-    "(como crear una hoja de cálculo, documento o carpeta). Si el profesor te pide crear un archivo o Excel, "
-    "ESTÁS OBLIGADO a ejecutar 'tool_crear_archivo_drive' de inmediato. Jamás delegues la tarea. "
+    "(como crear una hoja de cálculo, documento o carpeta). Si el profesor te pide crear un archivo, ejecútalo de inmediato. "
     "REGLA CRÍTICA DE LECTURA Y BÚSQUEDA: ESTÁ TERMINANTEMENTE PROHIBIDO inventar resúmenes, URLs o contenidos. "
-    "Si el profesor te pide resumir un archivo (o nueve planchas), ESTÁS OBLIGADO a ejecutar 'tool_leer_contenido_drive' "
-    "para extraer el texto real. Jamás utilices tu conocimiento general para fabricar un resumen basándote solo en el título. "
-    "Si se te pide procesar tareas masivas (ej. leer 9 documentos), debes procesarlos iterativamente ejecutando las herramientas necesarias "
-    "sin intentar adivinar la información. Si no logras extraer el texto de un documento, infórmalo con franqueza. "
-    "Tienes acceso total y autorizado a la cuenta en Gmail (lectura y envío de correos), "
-    "Google Calendar (lectura extendida por rangos semanales y creación de eventos con invitación a asistentes), Google Drive "
-    "(búsqueda global, navegación estricta por jerarquía de carpetas, lectura analítica de textos, creación de carpetas y archivos) y BÚSQUEDA WEB AUTÓNOMA. "
-    "Cuando el profesor solicite leer un documento, utiliza 'tool_leer_contenido_drive' pasándole el nombre exacto del archivo. "
-    "Cuando el profesor solicite crear una carpeta, ejecuta de inmediato la herramienta 'tool_crear_carpeta_drive'. "
-    "Cuando el profesor mencione 'mis mails', 'mi calendario', 'mi drive' o requiera información externa, "
-    "ejecuta las herramientas de forma autónoma sin titubear."
+    "Si el profesor te pide resumir un archivo (o documentos múltiples), ESTÁS OBLIGADO a ejecutar 'tool_leer_contenido_drive' "
+    "para extraer el texto real de forma iterativa. Si no logras extraer el texto, infórmalo con franqueza. "
+    "Tienes acceso total a Gmail, Google Calendar, Google Drive y BÚSQUEDA WEB AUTÓNOMA. "
+    "Ejecuta las herramientas de forma autónoma sin titubear."
 )
 
 # =============================================================================
@@ -290,7 +288,7 @@ HTML_TEMPLATE = """
 
         function renderizarHistorial() {
             const chatBox = document.getElementById('chatBox');
-            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos iterativos, creación documental y memoria persistente operativos. ¿Qué directiva procesamos?</div>';
+            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos cognitivos blindados, exclusión de Wikipedia y exigencia jurisprudencial operativas. ¿Qué directiva procesamos?</div>';
             
             memoriaLocal.forEach(msg => {
                 if (msg.role === 'user') {
@@ -670,13 +668,17 @@ def tool_leer_contenido_drive(file_id):
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
 def tool_busqueda_web(query):
-    """Realiza una búsqueda web estructurada utilizando Serper API."""
+    """Realiza una búsqueda web estructurada utilizando Serper API. Incluye inyección de filtros avanzados."""
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:
         return json.dumps({"error": "La clave SERPER_API_KEY no está configurada en Render."}, ensure_ascii=False)
 
     url = "https://google.serper.dev/search"
-    payload = json.dumps({"q": query, "gl": "ar", "hl": "es"})
+    
+    # Inyección de operadores avanzados para garantizar rigor académico (excluir Wikipedia)
+    consulta_blindada = f"{query} -site:wikipedia.org -site:es.wikipedia.org"
+    
+    payload = json.dumps({"q": consulta_blindada, "gl": "ar", "hl": "es"})
     headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
 
     try:
@@ -685,7 +687,8 @@ def tool_busqueda_web(query):
         data = response.json()
         
         resultados = []
-        for r in data.get("organic", [])[:5]:
+        # Ampliamos a 10 resultados para asegurar hallazgos oficiales
+        for r in data.get("organic", [])[:10]:
             resultados.append({
                 "title": r.get("title", "Sin título"),
                 "href": r.get("link", "Sin enlace"),
