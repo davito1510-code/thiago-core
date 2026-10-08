@@ -48,7 +48,7 @@ SYSTEM_INSTRUCTION = (
     "Si realizas una búsqueda web, DEBES priorizar dominios oficiales de tribunales o bases de datos jurídicas primarias. "
     "Toda respuesta que cite obras o sitios debe seguir las normas APA. "
     "REGLA CRÍTICA OPERATIVA: ESTÁ TERMINANTEMENTE PROHIBIDO pedirle al profesor que realice una tarea manualmente. "
-    "Si el profesor te pide crear un archivo, ejecútalo de inmediato mediante tus herramientas. "
+    "Si el profesor te pide crear un archivo o agendar un evento, ejecútalo de inmediato mediante tus herramientas. "
     "REGLA CRÍTICA DE LECTURA Y BÚSQUEDA: ESTÁ TERMINANTEMENTE PROHIBIDO inventar resúmenes. "
     "Si recibes un documento adjunto en el chat, analízalo con rigor. Si debes leer algo de Drive, extrae el texto real iterativamente. "
     "Tienes acceso total a Gmail, Google Calendar, Google Drive y BÚSQUEDA WEB AUTÓNOMA. "
@@ -298,7 +298,7 @@ HTML_TEMPLATE = """
 
         function renderizarHistorial() {
             const chatBox = document.getElementById('chatBox');
-            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos operativos, ingesta documental y memoria persistente activos. ¿Qué directiva procesamos?</div>';
+            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Contexto temporal en tiempo real y memoria persistente activos. ¿Qué directiva procesamos?</div>';
             
             memoriaLocal.forEach(msg => {
                 if (msg.role === 'user') {
@@ -307,7 +307,7 @@ HTML_TEMPLATE = """
                     if (displayTexto.includes("[Se adjunta el archivo:")) {
                         let partes = displayTexto.split("Directiva del Profesor:");
                         if (partes.length > 1) {
-                            displayTexto = `📎 Archivo enviado.\n${partes[1].trim()}`;
+                            displayTexto = `📎 Archivo enviado.\\n${partes[1].trim()}`;
                         }
                     }
                     chatBox.innerHTML += `<div class="message user-msg">${displayTexto}</div>`;
@@ -449,7 +449,7 @@ HTML_TEMPLATE = """
             // Si hay un archivo adjunto, se ensambla en el contexto cognitivo
             if (archivoAdjuntoTexto !== "") {
                 chatBox.innerHTML += `<div class="message user-msg">📎 Archivo enviado: ${archivoAdjuntoNombre}<br>${textoUsuarioVisual}</div>`;
-                payloadCognitivo = `[Se adjunta el archivo: ${archivoAdjuntoNombre}]\n\nContenido extraído del documento:\n${archivoAdjuntoTexto}\n\nDirectiva del Profesor:\n${textoUsuarioVisual}`;
+                payloadCognitivo = `[Se adjunta el archivo: ${archivoAdjuntoNombre}]\\n\\nContenido extraído del documento:\\n${archivoAdjuntoTexto}\\n\\nDirectiva del Profesor:\\n${textoUsuarioVisual}`;
                 archivoAdjuntoTexto = "";
                 archivoAdjuntoNombre = "";
                 input.placeholder = "Escriba su consulta o hable...";
@@ -536,7 +536,6 @@ def procesar_carga_archivo():
         else:
             return jsonify({"success": False, "error": "Formato no soportado. Suba PDF, DOCX, TXT o CSV."}), 400
         
-        # Límite de seguridad para evitar desbordamiento del contexto de OpenAI
         texto_extraido = texto_extraido[:35000]
         return jsonify({"success": True, "filename": file.filename, "text": texto_extraido})
     except Exception as e:
@@ -1032,7 +1031,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_leer_contenido_drive",
-            "description": "Extrae el texto de un archivo específico de Drive dado su ID único o el nombre exacto del archivo.",
+            "description": "Extrae el texto del archivo en Drive dado su ID único o nombre.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1076,7 +1075,14 @@ def chat():
 
     if OPENAI_API_KEY:
         try:
-            mensajes_api = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+            # INYECCIÓN DEL RELOJ INTERNO Y CONTEXTO TEMPORAL
+            from datetime import timezone, timedelta
+            ahora_bsas = datetime.datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3)))
+            fecha_str = ahora_bsas.strftime('%A, %d de %B de %Y, %H:%M:%S')
+            
+            instruccion_dinamica = SYSTEM_INSTRUCTION + f"\n\nINFORMACIÓN VITAL: Hoy es {fecha_str} (Hora de Buenos Aires, Argentina). Utiliza esta fecha y hora como referencia absoluta y obligatoria para agendar eventos en Google Calendar o ubicarte temporalmente."
+            
+            mensajes_api = [{"role": "system", "content": instruccion_dinamica}]
             
             for msg in historial_cliente:
                 if msg.get("role") in ["user", "assistant"] and msg.get("content"):
