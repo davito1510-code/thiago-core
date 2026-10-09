@@ -11,7 +11,7 @@
 
 import os
 import datetime
-from datetime import timezone
+from datetime import timezone, timedelta
 import json
 import io
 import base64
@@ -47,11 +47,14 @@ SYSTEM_INSTRUCTION = (
     "ESTÁ TERMINANTEMENTE PROHIBIDO utilizar o citar Wikipedia, blogs, o fuentes no oficiales para temas jurídicos, académicos o históricos. "
     "Si realizas una búsqueda web, DEBES priorizar dominios oficiales de tribunales o bases de datos jurídicas primarias. "
     "Toda respuesta que cite obras o sitios debe seguir las normas APA. "
+    "REGLA CRÍTICA CALENDARIO: Al crear eventos, valida que no existan duplicados. Si el profesor detecta eventos duplicados "
+    "tienes la capacidad de consultar la agenda con 'tool_consultar_calendario' y eliminar las copias "
+    "innecesarias utilizando 'tool_eliminar_evento_calendario'. "
     "REGLA CRÍTICA OPERATIVA: ESTÁ TERMINANTEMENTE PROHIBIDO pedirle al profesor que realice una tarea manualmente. "
-    "Si el profesor te pide crear un archivo o agendar un evento, ejecútalo de inmediato mediante tus herramientas. "
+    "Si el profesor te pide crear un archivo, agendar un evento o mandar un WhatsApp, ejecútalo de inmediato mediante tus herramientas. "
     "REGLA CRÍTICA DE LECTURA Y BÚSQUEDA: ESTÁ TERMINANTEMENTE PROHIBIDO inventar resúmenes. "
-    "Si recibes un documento adjunto en el chat, analízalo con rigor. Si debes leer algo de Drive, extrae el texto real iterativamente. "
-    "Tienes acceso total a Gmail, Google Calendar, Google Drive y BÚSQUEDA WEB AUTÓNOMA. "
+    "Si recibes un documento adjunto en el chat, analízalo con rigor extrayendo el texto real. "
+    "Tienes acceso total a Gmail, Google Calendar, Google Drive, Twilio (WhatsApp) y BÚSQUEDA WEB AUTÓNOMA. "
     "Ejecuta las herramientas de forma autónoma sin titubear."
 )
 
@@ -293,12 +296,16 @@ HTML_TEMPLATE = """
         let archivoAdjuntoTexto = "";
         let archivoAdjuntoNombre = "";
         
+        // Variables para la lógica de Confirmación de Lectura de Voz
+        let respuestaPendienteDeLectura = "";
+        let esperandoConfirmacionDeVoz = false;
+        
         // Memoria Persistente en el Cliente (Navegador)
         let memoriaLocal = JSON.parse(localStorage.getItem('thiago_memoria')) || [];
 
         function renderizarHistorial() {
             const chatBox = document.getElementById('chatBox');
-            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Contexto temporal en tiempo real y memoria persistente activos. ¿Qué directiva procesamos?</div>';
+            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos operativos, lectura condicionada y memoria persistente activos. ¿Qué directiva procesamos?</div>';
             
             memoriaLocal.forEach(msg => {
                 if (msg.role === 'user') {
@@ -326,6 +333,8 @@ HTML_TEMPLATE = """
                 memoriaLocal = [];
                 archivoAdjuntoTexto = "";
                 archivoAdjuntoNombre = "";
+                esperandoConfirmacionDeVoz = false;
+                respuestaPendienteDeLectura = "";
                 document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
                 renderizarHistorial();
             }
@@ -375,9 +384,23 @@ HTML_TEMPLATE = """
             recognition.interimResults = false;
 
             recognition.onresult = function(event) {
-                const textoTranscrito = event.results[0][0].transcript;
-                document.getElementById('userInput').value = textoTranscrito;
+                const textoTranscrito = event.results[0][0].transcript.toLowerCase();
                 detenerEscuchaVisual();
+
+                // LÓGICA DE ESCUCHA CONDICIONADA (Permiso para leer)
+                if (esperandoConfirmacionDeVoz) {
+                    esperandoConfirmacionDeVoz = false;
+                    if (textoTranscrito.includes("sí") || textoTranscrito.includes("si") || textoTranscrito.includes("claro") || textoTranscrito.includes("lee") || textoTranscrito.includes("leela") || textoTranscrito.includes("por favor")) {
+                        hablarTextoDefinitivo(respuestaPendienteDeLectura);
+                    } else {
+                        // Si dice que no, limpiamos el estado y guardamos silencio.
+                        respuestaPendienteDeLectura = "";
+                    }
+                    document.getElementById('userInput').value = '';
+                    return;
+                }
+
+                document.getElementById('userInput').value = event.results[0][0].transcript;
                 enviarMensaje();
             };
             recognition.onerror = function() { detenerEscuchaVisual(); };
@@ -417,15 +440,36 @@ HTML_TEMPLATE = """
             escuchando = false;
         }
 
-        function hablarTexto(texto) {
+        function hablarTextoDefinitivo(texto) {
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                // SANEAMIENTO DE SÍNTESIS DE VOZ: Se eliminan caracteres Markdown para lectura natural
+                // SANEAMIENTO: Eliminar caracteres especiales de markdown para lectura fluida
                 let textoLimpio = texto.replace(/[*_#`~|\/]/g, '');
                 const utterance = new SpeechSynthesisUtterance(textoLimpio);
                 utterance.lang = 'es-AR';
                 utterance.rate = 1.0;
                 window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function solicitarPermisoLectura() {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const pregunta = new SpeechSynthesisUtterance("Profesor, la respuesta está en pantalla. ¿Desea que se la lea?");
+                pregunta.lang = 'es-AR';
+                pregunta.rate = 1.0;
+                
+                pregunta.onend = function() {
+                    // Al terminar de preguntar, se enciende automáticamente el micrófono
+                    try {
+                        recognition.start();
+                        document.getElementById('micBtn').classList.add('active');
+                        document.getElementById('userInput').placeholder = "Esperando confirmación (Sí/No)...";
+                        escuchando = true;
+                    } catch (e) {}
+                };
+                
+                window.speechSynthesis.speak(pregunta);
             }
         }
 
@@ -437,6 +481,9 @@ HTML_TEMPLATE = """
                 try { recognition.stop(); } catch(e) {}
                 detenerEscuchaVisual();
             }
+            
+            // Anulamos cualquier confirmación pendiente si el usuario escribe algo nuevo
+            esperandoConfirmacionDeVoz = false;
 
             const input = document.getElementById('userInput');
             const chatBox = document.getElementById('chatBox');
@@ -489,7 +536,12 @@ HTML_TEMPLATE = """
 
                 chatBox.innerHTML += `<div class="message ai-msg">${data.reply}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
-                hablarTexto(data.reply);
+                
+                // INICIO DE LÓGICA DE CONFIRMACIÓN DE LECTURA
+                respuestaPendienteDeLectura = data.reply;
+                esperandoConfirmacionDeVoz = true;
+                solicitarPermisoLectura();
+                
             } catch (error) {
                 document.getElementById(idCarga).remove();
                 chatBox.innerHTML += `<div class="message ai-msg error-text">Error crítico de comunicación con el núcleo operativo.</div>`;
@@ -536,10 +588,11 @@ def procesar_carga_archivo():
         else:
             return jsonify({"success": False, "error": "Formato no soportado. Suba PDF, DOCX, TXT o CSV."}), 400
         
+        # Limitamos a 35000 caracteres para asegurar el funcionamiento óptimo de OpenAI
         texto_extraido = texto_extraido[:35000]
         return jsonify({"success": True, "filename": file.filename, "text": texto_extraido})
     except Exception as e:
-        return jsonify({"success": False, "error": f"Error de lectura: {str(e)}"}), 500
+        return jsonify({"success": False, "error": f"Error de lectura al procesar archivo: {str(e)}"}), 500
 
 # =============================================================================
 # SECCIÓN 5: GESTIÓN DE CREDENCIALES OAUTH Y CONECTIVIDAD GOOGLE
@@ -568,6 +621,7 @@ def obtener_credenciales():
     return credenciales
 
 def extraer_cuerpo_gmail(payload):
+    """Extrae el contenido de texto plano de los correos de Gmail."""
     cuerpo_texto = ""
     if 'parts' in payload:
         for parte in payload['parts']:
@@ -592,9 +646,10 @@ def extraer_cuerpo_gmail(payload):
     return cuerpo_texto[:4000] if cuerpo_texto else "Sin cuerpo de texto legible."
 
 # =============================================================================
-# SECCIÓN 6: HERRAMIENTAS AUTÓNOMAS (TOOLS) DE LECTURA Y ESCRITURA
+# SECCIÓN 6: HERRAMIENTAS AUTÓNOMAS (TOOLS) DE LECTURA, ESCRITURA Y MENSAJERÍA
 # =============================================================================
 def tool_listar_correos():
+    """Consulta los últimos correos electrónicos de la bandeja de entrada de Gmail."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('gmail', 'v1', credentials=credenciales)
@@ -624,6 +679,7 @@ def tool_listar_correos():
         return json.dumps({"error_tecnico_gmail": str(error)}, ensure_ascii=False)
 
 def tool_enviar_correo(destinatario, asunto, cuerpo):
+    """Envía un correo electrónico a través de la infraestructura de Gmail."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('gmail', 'v1', credentials=credenciales)
@@ -639,14 +695,19 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         print(f"[ERROR CRÍTICO GMAIL ENVÍO DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_gmail_envio": str(error)}, ensure_ascii=False)
 
-def tool_consultar_calendario():
+def tool_consultar_calendario(time_min=None):
+    """Consulta los próximos eventos y citas agendados en Google Calendar con alta capacidad."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
-        ahora = datetime.datetime.now(timezone.utc).isoformat()
+        ahora = time_min or datetime.datetime.now(timezone.utc).isoformat()
         
         respuesta_eventos = servicio.events().list(
-            calendarId='primary', timeMin=ahora, maxResults=50, singleEvents=True, orderBy='startTime'
+            calendarId='primary',
+            timeMin=ahora,
+            maxResults=50,
+            singleEvents=True,
+            orderBy='startTime'
         ).execute()
         eventos = respuesta_eventos.get('items', [])
         if not eventos:
@@ -658,7 +719,8 @@ def tool_consultar_calendario():
             fin = evento['end'].get('dateTime', evento['end'].get('date'))
             titulo = evento.get('summary', 'Sin título')
             ubicacion = evento.get('location', 'Sin ubicación')
-            lista_eventos.append({"fecha_inicio": inicio, "fecha_fin": fin, "evento": titulo, "ubicacion": ubicacion})
+            event_id = evento.get('id')
+            lista_eventos.append({"id": event_id, "fecha_inicio": inicio, "fecha_fin": fin, "evento": titulo, "ubicacion": ubicacion})
             
         return json.dumps(lista_eventos, ensure_ascii=False)
     except Exception as error:
@@ -666,10 +728,20 @@ def tool_consultar_calendario():
         return json.dumps({"error_tecnico_calendar": str(error)}, ensure_ascii=False)
 
 def tool_crear_evento_calendario(summary, start_time, end_time, location="", description="", attendees=None):
+    """Crea un evento en Google Calendar. Bloquea de forma estricta la duplicación idéntica en el mismo horario."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('calendar', 'v3', credentials=credenciales)
         
+        # LÓGICA ANTIDUPLICACIÓN QUIRÚRGICA
+        existentes = servicio.events().list(
+            calendarId='primary', timeMin=start_time, timeMax=end_time, q=summary, singleEvents=True
+        ).execute().get('items', [])
+        
+        for ev in existentes:
+            if ev.get('summary') == summary:
+                return json.dumps({"resultado": "El evento ya existe en el calendario. Se ha bloqueado la duplicación.", "id": ev.get('id')}, ensure_ascii=False)
+
         evento = {
             'summary': summary,
             'location': location,
@@ -685,12 +757,24 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
                 evento['attendees'] = [{'email': email.strip()} for email in attendees.split(',')]
         
         creado = servicio.events().insert(calendarId='primary', body=evento, sendUpdates='all').execute()
-        return json.dumps({"resultado": "Evento creado exitosamente en el calendario", "link": creado.get('htmlLink')}, ensure_ascii=False)
+        return json.dumps({"resultado": "Evento creado exitosamente en el calendario", "id": creado.get('id'), "link": creado.get('htmlLink')}, ensure_ascii=False)
     except Exception as error:
         print(f"[ERROR CRÍTICO CALENDAR CREACIÓN DETALLADO]: {repr(error)}")
         return json.dumps({"error_tecnico_calendar_creacion": str(error)}, ensure_ascii=False)
 
+def tool_eliminar_evento_calendario(event_id):
+    """Elimina un evento específico de Google Calendar por su ID (útil para limpiar agendas duplicadas)."""
+    try:
+        credenciales = obtener_credenciales()
+        servicio = build('calendar', 'v3', credentials=credenciales)
+        servicio.events().delete(calendarId='primary', eventId=event_id).execute()
+        return json.dumps({"resultado": f"Evento con ID {event_id} eliminado correctamente del calendario."}, ensure_ascii=False)
+    except Exception as error:
+        print(f"[ERROR CRÍTICO CALENDAR ELIMINACIÓN DETALLADO]: {repr(error)}")
+        return json.dumps({"error_tecnico_calendar_eliminacion": str(error)}, ensure_ascii=False)
+
 def tool_buscar_archivos_drive(query=""):
+    """Busca archivos o carpetas en Google Drive aplicando sanitización estricta de cadenas."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -699,8 +783,12 @@ def tool_buscar_archivos_drive(query=""):
         condicion = f"name contains '{consulta_limpia}' and trashed = false" if consulta_limpia else "trashed = false"
         
         resultados = servicio.files().list(
-            q=condicion, pageSize=30, fields="files(id, name, mimeType, parents)",
-            includeItemsFromAllDrives=True, supportsAllDrives=True, orderBy="modifiedTime desc"
+            q=condicion,
+            pageSize=30,
+            fields="files(id, name, mimeType, parents)",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            orderBy="modifiedTime desc"
         ).execute()
         
         elementos = resultados.get('files', [])
@@ -712,6 +800,7 @@ def tool_buscar_archivos_drive(query=""):
         return json.dumps({"error_tecnico_drive": str(error)}, ensure_ascii=False)
 
 def tool_leer_contenido_drive(file_id):
+    """Extrae texto de un archivo en Drive. Si recibe el nombre en vez del ID, busca automáticamente el ID real."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -765,12 +854,16 @@ def tool_leer_contenido_drive(file_id):
         return json.dumps({"error_tecnico_drive_lectura": str(error)}, ensure_ascii=False)
 
 def tool_busqueda_web(query):
+    """Realiza una búsqueda web estructurada utilizando Serper API. Incluye inyección de filtros avanzados."""
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:
         return json.dumps({"error": "La clave SERPER_API_KEY no está configurada en Render."}, ensure_ascii=False)
 
     url = "https://google.serper.dev/search"
+    
+    # Inyección de operadores avanzados para garantizar rigor académico (excluir Wikipedia)
     consulta_blindada = f"{query} -site:wikipedia.org -site:es.wikipedia.org"
+    
     payload = json.dumps({"q": consulta_blindada, "gl": "ar", "hl": "es"})
     headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
 
@@ -780,6 +873,7 @@ def tool_busqueda_web(query):
         data = response.json()
         
         resultados = []
+        # Ampliamos a 10 resultados para asegurar hallazgos oficiales
         for r in data.get("organic", [])[:10]:
             resultados.append({
                 "title": r.get("title", "Sin título"),
@@ -797,6 +891,7 @@ def tool_busqueda_web(query):
         return json.dumps({"estado": "error_conexion_api", "detalle": str(error)}, ensure_ascii=False)
 
 def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
+    """Busca y lista archivos contenidos en una carpeta de Google Drive."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -838,6 +933,7 @@ def tool_listar_contenido_carpeta_drive(nombre_carpeta=""):
         return json.dumps({"error_tecnico_listar_carpeta": str(error)}, ensure_ascii=False)
 
 def tool_crear_carpeta_drive(nombre_carpeta, nombre_carpeta_padre="ACTIVIDADES"):
+    """Crea una nueva carpeta en Google Drive dentro de una carpeta padre específica."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -865,6 +961,7 @@ def tool_crear_carpeta_drive(nombre_carpeta, nombre_carpeta_padre="ACTIVIDADES")
         return json.dumps({"error_tecnico_crear_carpeta": str(error)}, ensure_ascii=False)
 
 def tool_crear_archivo_drive(nombre_archivo, tipo_archivo, nombre_carpeta_padre=""):
+    """Crea un nuevo archivo nativo (Documento u Hoja de Cálculo) en Google Drive."""
     try:
         credenciales = obtener_credenciales()
         servicio = build('drive', 'v3', credentials=credenciales)
@@ -898,6 +995,37 @@ def tool_crear_archivo_drive(nombre_archivo, tipo_archivo, nombre_carpeta_padre=
         print(f"[ERROR CRÍTICO CREAR ARCHIVO DRIVE]: {repr(error)}")
         return json.dumps({"error_tecnico_crear_archivo": str(error)}, ensure_ascii=False)
 
+def tool_enviar_whatsapp(destinatario, mensaje):
+    """Envía un mensaje de WhatsApp utilizando la infraestructura de Twilio."""
+    try:
+        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        twilio_from = os.getenv("TWILIO_WHATSAPP_FROM")
+        
+        if not account_sid or not auth_token or not twilio_from:
+            return json.dumps({"error": "Las credenciales de Twilio no están configuradas en Render."}, ensure_ascii=False)
+        
+        destinatario_limpio = destinatario.strip().replace(" ", "").replace("+", "")
+        if not destinatario_limpio.startswith("whatsapp:"):
+            destinatario_formateado = f"whatsapp:+{destinatario_limpio}" if not destinatario_limpio.startswith("54") else f"whatsapp:+{destinatario_limpio}"
+        else:
+            destinatario_formateado = destinatario_limpio
+
+        url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+        payload = {
+            'To': destinatario_formateado,
+            'From': twilio_from,
+            'Body': mensaje
+        }
+        
+        response = requests.post(url, data=payload, auth=(account_sid, auth_token), timeout=15)
+        response.raise_for_status()
+        
+        return json.dumps({"resultado": f"Mensaje de WhatsApp enviado con éxito a {destinatario}."}, ensure_ascii=False)
+    except Exception as error:
+        print(f"[ERROR CRÍTICO TWILIO WHATSAPP]: {repr(error)}")
+        return json.dumps({"error_tecnico_whatsapp": str(error)}, ensure_ascii=False)
+
 # =============================================================================
 # SECCIÓN 7: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN DE FUNCIONES PARA OPENAI
 # =============================================================================
@@ -906,12 +1034,14 @@ available_tools = {
     "tool_enviar_correo": tool_enviar_correo,
     "tool_consultar_calendario": tool_consultar_calendario,
     "tool_crear_evento_calendario": tool_crear_evento_calendario,
+    "tool_eliminar_evento_calendario": tool_eliminar_evento_calendario,
     "tool_buscar_archivos_drive": tool_buscar_archivos_drive,
     "tool_leer_contenido_drive": tool_leer_contenido_drive,
     "tool_busqueda_web": tool_busqueda_web,
     "tool_listar_contenido_carpeta_drive": tool_listar_contenido_carpeta_drive,
     "tool_crear_carpeta_drive": tool_crear_carpeta_drive,
-    "tool_crear_archivo_drive": tool_crear_archivo_drive
+    "tool_crear_archivo_drive": tool_crear_archivo_drive,
+    "tool_enviar_whatsapp": tool_enviar_whatsapp
 }
 
 openai_tools_definition = [
@@ -942,14 +1072,21 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_consultar_calendario",
-            "description": "Consulta los próximos eventos y citas registrados en el Google Calendar."
+            "description": "Consulta los próximos eventos y citas registrados en el Google Calendar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "time_min": {"type": "string", "description": "Fecha mínima en formato ISO 8601."}
+                },
+                "required": []
+            }
         }
     },
     {
         "type": "function",
         "function": {
             "name": "tool_crear_evento_calendario",
-            "description": "Crea un evento real en Google Calendar con fecha, hora, ubicación, descripción y asistentes invitados.",
+            "description": "Crea un evento en Google Calendar. El código ya posee validación interna antiduplicados.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -971,6 +1108,20 @@ openai_tools_definition = [
     {
         "type": "function",
         "function": {
+            "name": "tool_eliminar_evento_calendario",
+            "description": "Elimina un evento duplicado o incorrecto del calendario por su ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "ID único del evento a eliminar."}
+                },
+                "required": ["event_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "tool_buscar_archivos_drive",
             "description": "Busca archivos o carpetas en Google Drive por palabra clave.",
             "parameters": {
@@ -986,7 +1137,7 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_listar_contenido_carpeta_drive",
-            "description": "Busca una carpeta específica por su nombre en Google Drive y lista todos los archivos y subcarpetas que contiene en su interior.",
+            "description": "Busca una carpeta específica por su nombre en Google Drive y lista todos los archivos.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1004,8 +1155,8 @@ openai_tools_definition = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "nombre_carpeta": {"type": "string", "description": "Nombre de la carpeta a crear, por ejemplo 'Thiago'."},
-                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre de la carpeta contenedora, por defecto 'ACTIVIDADES'."}
+                    "nombre_carpeta": {"type": "string", "description": "Nombre de la carpeta a crear."},
+                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre de la carpeta contenedora."}
                 },
                 "required": ["nombre_carpeta"]
             }
@@ -1015,13 +1166,13 @@ openai_tools_definition = [
         "type": "function",
         "function": {
             "name": "tool_crear_archivo_drive",
-            "description": "Crea un nuevo archivo nativo (Documento de texto u Hoja de cálculo tipo Excel) en Google Drive dentro de una carpeta padre específica.",
+            "description": "Crea un nuevo archivo nativo en Google Drive dentro de una carpeta padre específica.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "nombre_archivo": {"type": "string", "description": "Nombre del archivo a crear."},
-                    "tipo_archivo": {"type": "string", "enum": ["hoja_calculo", "documento"], "description": "Seleccionar 'hoja_calculo' para Excel/Sheets o 'documento' para Word/Docs."},
-                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre exacto de la carpeta contenedora, por ejemplo 'Módulo Contable'."}
+                    "tipo_archivo": {"type": "string", "enum": ["hoja_calculo", "documento"], "description": "Tipo de archivo."},
+                    "nombre_carpeta_padre": {"type": "string", "description": "Nombre exacto de la carpeta contenedora."}
                 },
                 "required": ["nombre_archivo", "tipo_archivo"]
             }
@@ -1035,7 +1186,7 @@ openai_tools_definition = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_id": {"type": "string", "description": "El identificador único (ID) del archivo en Google Drive o su nombre completo."}
+                    "file_id": {"type": "string", "description": "El ID o nombre del archivo en Google Drive."}
                 },
                 "required": ["file_id"]
             }
@@ -1054,6 +1205,21 @@ openai_tools_definition = [
                 "required": ["query"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_enviar_whatsapp",
+            "description": "Envía un mensaje de WhatsApp a través de Twilio.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "destinatario": {"type": "string", "description": "Número de teléfono en formato internacional (ej. +5491153841743)."},
+                    "mensaje": {"type": "string", "description": "Contenido del mensaje a enviar."}
+                },
+                "required": ["destinatario", "mensaje"]
+            }
+        }
     }
 ]
 
@@ -1062,10 +1228,15 @@ openai_tools_definition = [
 # =============================================================================
 @app.route("/")
 def index():
+    """Renderiza la interfaz gráfica principal de Thiago."""
     return render_template_string(HTML_TEMPLATE)
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
+    """
+    Controlador principal del agente autónomo.
+    Implementa arquitectura Stateless: el contexto lo provee el cliente (navegador).
+    """
     datos_solicitud = request.get_json() or {}
     mensaje_usuario = datos_solicitud.get("message", "").strip()
     historial_cliente = datos_solicitud.get("history", [])
@@ -1075,12 +1246,11 @@ def chat():
 
     if OPENAI_API_KEY:
         try:
-            # INYECCIÓN DEL RELOJ INTERNO Y CONTEXTO TEMPORAL
-            from datetime import timezone, timedelta
+            # Reloj interno en tiempo real para agendamientos precisos
             ahora_bsas = datetime.datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3)))
             fecha_str = ahora_bsas.strftime('%A, %d de %B de %Y, %H:%M:%S')
             
-            instruccion_dinamica = SYSTEM_INSTRUCTION + f"\n\nINFORMACIÓN VITAL: Hoy es {fecha_str} (Hora de Buenos Aires, Argentina). Utiliza esta fecha y hora como referencia absoluta y obligatoria para agendar eventos en Google Calendar o ubicarte temporalmente."
+            instruccion_dinamica = SYSTEM_INSTRUCTION + f"\n\nINFORMACIÓN VITAL: Hoy es {fecha_str} (Hora de Buenos Aires, Argentina). Utiliza esta fecha y hora como referencia absoluta y obligatoria para agendar, buscar o eliminar eventos en Google Calendar."
             
             mensajes_api = [{"role": "system", "content": instruccion_dinamica}]
             
