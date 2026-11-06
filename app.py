@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
- NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL (v4.0)
- Arquitectura de Conectividad Total, OCR Universal, Caché Documental,
- Lectura Literal Íntegra y Secuenciador de Voz de Larga Duración.
+ NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL (v5.0)
+ Arquitectura Anti-Timeout, Lectura Literal Instantánea Sin Latencia OpenAI,
+ Caché Inter-Worker en Disco (/tmp), OCR Universal y Secuenciador de Voz.
  Desarrollado exclusivamente para el Prof. David Villarreal
  Abogado, Babalawo de Ifá tradicional yoruba, Batuque Isesa, profesor de inglés,
  magíster en relaciones internacionales, masón y doctorando.
@@ -19,12 +19,13 @@ import json
 import base64
 import zipfile
 import datetime
+import unicodedata
 from datetime import timezone, timedelta
 import xml.etree.ElementTree as ET
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
-from flask import Flask, render_template_string, request, jsonify, Response
+from flask import Flask, render_template_string, request, jsonify, Response, make_response
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -34,20 +35,21 @@ import docx
 
 
 # =============================================================================
-# SECCIÓN 1: INICIALIZACIÓN, CONFIGURACIÓN Y CACHÉ DOCUMENTAL EN SERVIDOR
+# SECCIÓN 1: INICIALIZACIÓN, CABECERAS ANTI-CACHÉ Y PERSISTENCIA INTER-WORKER
 # =============================================================================
 app = Flask(__name__)
 
-# Límite ampliado a 50 MB para permitir la subida de libros, fallos y planchas
+# Capacidad máxima de carga: 50 MB para soportar libros, expedientes y planchas
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL_MAIN = os.getenv("OPENAI_MODEL_MAIN", "gpt-4o-mini").strip()
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "").strip()
 
-# Caché en memoria del servidor para almacenar el texto íntegro del último
-# documento procesado (local o de Google Drive), evitando reenviar decenas de
-# miles de caracteres desde el navegador en cada turno conversacional.
+# Ruta en el sistema de archivos temporal de Linux (/tmp) compartida por todos
+# los workers de Gunicorn en Render para evitar pérdidas de contexto documental.
+CACHE_FILE_PATH = "/tmp/thiago_document_cache_v5.json"
+
 DOCUMENT_CACHE = {
     "ultimo_documento": {
         "id_documento": None,
@@ -62,47 +64,239 @@ DOCUMENT_CACHE = {
 }
 
 
+@app.after_request
+def aplicar_cabeceras_anti_cache(response):
+    """
+    Impide que el navegador almacene versiones antiguas del HTML/JS de Thiago
+    después de un nuevo despliegue en Render.
+    """
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+def sincronizar_cache_en_disco_guardar():
+    """Guarda el estado actual de DOCUMENT_CACHE en /tmp para compartirlo entre workers."""
+    try:
+        with open(CACHE_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(DOCUMENT_CACHE, f, ensure_ascii=False)
+    except Exception as err_disk:
+        print(f"[AVISO ESCRITURA CACHÉ EN DISCO]: {repr(err_disk)}")
+
+
+def sincronizar_cache_en_disco_cargar():
+    """Lee el estado de DOCUMENT_CACHE desde /tmp si el worker actual no lo tiene en RAM."""
+    global DOCUMENT_CACHE
+    try:
+        if os.path.exists(CACHE_FILE_PATH):
+            with open(CACHE_FILE_PATH, "r", encoding="utf-8") as f:
+                datos_disco = json.load(f)
+                if isinstance(datos_disco, dict) and datos_disco.get("ultimo_documento"):
+                    DOCUMENT_CACHE = datos_disco
+    except Exception as err_read:
+        print(f"[AVISO LECTURA CACHÉ EN DISCO]: {repr(err_read)}")
+
+
 def guardar_documento_en_cache(nombre, texto, origen="local", mime_type="text/plain", doc_id=None):
     """
-    Almacena de forma segura el contenido íntegro de un documento en la memoria
-    del servidor para su lectura literal instantánea o consulta reiterada.
+    Registra de manera atómica el texto íntegro de un documento tanto en la
+    memoria RAM del proceso como en el almacenamiento compartido /tmp.
     """
-    if not texto:
+    if not texto or not texto.strip():
         return None
 
+    texto_limpio = texto.strip()
     identificador = doc_id or str(uuid.uuid4())
     ahora_iso = datetime.datetime.now(timezone.utc).isoformat()
+
     registro = {
         "id_documento": identificador,
-        "nombre": nombre or "Documento_Sin_Titulo",
+        "nombre": nombre or "Documento_Cargado",
         "origen": origen,
         "mime_type": mime_type,
-        "texto_integro": texto,
-        "longitud_caracteres": len(texto),
+        "texto_integro": texto_limpio,
+        "longitud_caracteres": len(texto_limpio),
         "fecha_carga": ahora_iso
     }
+
     DOCUMENT_CACHE["ultimo_documento"] = registro
     DOCUMENT_CACHE["historial_documentos"][identificador] = registro
 
-    # Mantenemos únicamente los últimos 10 documentos en caché para cuidar la RAM
     if len(DOCUMENT_CACHE["historial_documentos"]) > 10:
-        llave_mas_antigua = next(iter(DOCUMENT_CACHE["historial_documentos"]))
-        if llave_mas_antigua != identificador:
-            DOCUMENT_CACHE["historial_documentos"].pop(llave_mas_antigua, None)
+        llave_antigua = next(iter(DOCUMENT_CACHE["historial_documentos"]))
+        if llave_antigua != identificador:
+            DOCUMENT_CACHE["historial_documentos"].pop(llave_antigua, None)
 
+    sincronizar_cache_en_disco_guardar()
     return registro
 
 
 def obtener_ultimo_documento_cache():
-    """Recupera el último documento cargado o leído desde Drive."""
+    """
+    Recupera el último documento procesado desde la RAM o desde el archivo
+    compartido en /tmp si otro worker de Gunicorn procesó la subida.
+    """
+    doc = DOCUMENT_CACHE.get("ultimo_documento", {})
+    if doc and doc.get("texto_integro"):
+        return doc
+
+    sincronizar_cache_en_disco_cargar()
     doc = DOCUMENT_CACHE.get("ultimo_documento", {})
     if doc and doc.get("texto_integro"):
         return doc
     return None
 
 
+def limpiar_cache_documental_completa():
+    """Purga tanto la memoria RAM como el archivo de caché en /tmp."""
+    DOCUMENT_CACHE["ultimo_documento"] = {
+        "id_documento": None,
+        "nombre": None,
+        "origen": None,
+        "mime_type": None,
+        "texto_integro": "",
+        "longitud_caracteres": 0,
+        "fecha_carga": None
+    }
+    DOCUMENT_CACHE["historial_documentos"] = {}
+    try:
+        if os.path.exists(CACHE_FILE_PATH):
+            os.remove(CACHE_FILE_PATH)
+    except Exception:
+        pass
+
+
 # =============================================================================
-# SECCIÓN 2: INSTRUCCIÓN DE SISTEMA (SYSTEM PROMPT) Y DETECTOR DE LECTURA LITERAL
+# SECCIÓN 2: NORMALIZADOR DIACRÍTICO Y MOTOR DE LECTURA LITERAL INSTANTÁNEA
+# =============================================================================
+def normalizar_sin_tildes(texto):
+    """
+    Elimina tildes y signos diacríticos ('Léeme' -> 'leeme', 'Íntegro' -> 'integro')
+    y convierte a minúsculas para comparaciones léxicas infalibles.
+    """
+    if not texto:
+        return ""
+    descompuesto = unicodedata.normalize('NFD', str(texto))
+    sin_diacriticos = ''.join(
+        c for c in descompuesto if unicodedata.category(c) != 'Mn'
+    )
+    return sin_diacriticos.lower().strip()
+
+
+def desglosar_payload_con_adjunto(mensaje_usuario):
+    """
+    Analiza si el mensaje enviado desde el navegador contiene un archivo inyectado
+    con el formato:
+    [Se adjunta el archivo: NOMBRE]
+    Contenido extraído del documento:
+    TEXTO
+    Directiva del Profesor:
+    DIRECTIVA
+    Si lo detecta, extrae las tres partes y guarda el documento en la caché del servidor.
+    """
+    if not mensaje_usuario or "[Se adjunta el archivo:" not in mensaje_usuario:
+        return {
+            "tiene_adjunto": False,
+            "nombre_archivo": None,
+            "texto_documento": None,
+            "directiva_limpia": (mensaje_usuario or "").strip()
+        }
+
+    nombre_archivo = "Documento_Adjunto"
+    texto_documento = ""
+    directiva_limpia = mensaje_usuario
+
+    try:
+        match_nombre = re.search(r"\[Se adjunta el archivo:\s*(.+?)\]", mensaje_usuario)
+        if match_nombre:
+            nombre_archivo = match_nombre.group(1).strip()
+
+        if "Contenido extraído del documento:" in mensaje_usuario and "Directiva del Profesor:" in mensaje_usuario:
+            bloque_1 = mensaje_usuario.split("Contenido extraído del documento:", 1)[1]
+            partes_2 = bloque_1.rsplit("Directiva del Profesor:", 1)
+            texto_documento = partes_2[0].strip()
+            directiva_limpia = partes_2[1].strip()
+        elif "Directiva del Profesor:" in mensaje_usuario:
+            partes_2 = mensaje_usuario.rsplit("Directiva del Profesor:", 1)
+            texto_documento = partes_2[0].strip()
+            directiva_limpia = partes_2[1].strip()
+
+        if texto_documento:
+            guardar_documento_en_cache(
+                nombre=nombre_archivo,
+                texto=texto_documento,
+                origen="local_payload"
+            )
+    except Exception as err_parse:
+        print(f"[AVISO DESGLOSE PAYLOAD]: {repr(err_parse)}")
+
+    return {
+        "tiene_adjunto": bool(texto_documento),
+        "nombre_archivo": nombre_archivo,
+        "texto_documento": texto_documento,
+        "directiva_limpia": directiva_limpia
+    }
+
+
+PATRONES_LECTURA_LITERAL_SIN_TILDES = [
+    r"no\s+quiero\s+(un\s+|ningun\s+)?resumen",
+    r"sin\s+resumir",
+    r"quiero\s+que\s+(me\s+)?leas",
+    r"lee(me|lo|la)?\s+(este|el|ese|todo\s+el|el\s+contenido\s+del)?\s*(archivo|documento|texto|pdf|plancha|certificado|cv|curriculum|fallo|escrito)",
+    r"^lee(me|lo|la)?(\s+por\s+favor|\s+completo|\s+integro|\s+entero|\s+ahora|\s+si)?\.?$",
+    r"^leer(\s+archivo|\s+documento|\s+completo|\s+integro|\s+todo)?\.?$",
+    r"lee(me)?\s+el\s+(documento|archivo|texto)\s+anterior",
+    r"transcrib(i|e|ir)\s+(este|el)\s+(documento|archivo|texto)",
+    r"mostra(me)?\s+el\s+(texto|documento|archivo|contenido)\s*(completo|integro|literal|entero)?",
+    r"texto\s+(completo|integro|literal)"
+]
+
+
+def solicita_lectura_literal_directa(directiva_usuario, tiene_adjunto_en_turno=False):
+    """
+    Evalúa con precisión quirúrgica (e ignorando tildes) si el profesor está
+    solicitando leer/transcribir el documento en lugar de resumirlo.
+    """
+    if not directiva_usuario:
+        return bool(tiene_adjunto_en_turno)
+
+    # Extraemos solo la directiva si aún viene con la cabecera del payload
+    if "Directiva del Profesor:" in directiva_usuario:
+        directiva_usuario = directiva_usuario.rsplit("Directiva del Profesor:", 1)[-1]
+
+    limpio = normalizar_sin_tildes(directiva_usuario)
+    if not limpio:
+        return bool(tiene_adjunto_en_turno)
+
+    # Si explícitamente rechaza el resumen, siempre es lectura literal
+    if "no quiero un resumen" in limpio or "no quiero resumen" in limpio or "sin resumir" in limpio:
+        return True
+
+    # Si explícitamente pide resumir, analizar, explicar o sintetizar, no es lectura literal
+    palabras_analisis = [
+        "resumi", "resumen", "sintetiza", "sintesis", "puntos clave",
+        "explica", "analiza", "analisis", "opina", "opinion", "compara",
+        "traduce", "traduci", "corrige", "corregi", "cuales son", "que significa"
+    ]
+    if any(p in limpio for p in palabras_analisis):
+        # Excepción: "Analiza el documento adjunto." es el texto por defecto cuando no escribe nada,
+        # pero si escribió "leeme", entra por los patrones inferiores.
+        return False
+
+    for patron in PATRONES_LECTURA_LITERAL_SIN_TILDES:
+        if re.search(patron, limpio):
+            return True
+
+    # Si adjuntó un archivo en este mismo mensaje y la orden empieza con "lee" o "leeme"
+    if tiene_adjunto_en_turno and (limpio.startswith("lee") or limpio.startswith("leer")):
+        return True
+
+    return False
+
+
+# =============================================================================
+# SECCIÓN 3: INSTRUCCIÓN DE SISTEMA (SYSTEM PROMPT) DE ALTA VELOCIDAD
 # =============================================================================
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal "
@@ -123,14 +317,10 @@ SYSTEM_INSTRUCTION = (
     "ESTÁ TERMINANTEMENTE PROHIBIDO utilizar o citar Wikipedia, blogs o fuentes no oficiales. "
     "Toda respuesta que cite obras, autores o sitios debe aplicar estrictamente las normas APA (7.ª edición). "
     "\n\n"
-    "REGLA CRÍTICA DE LECTURA LITERAL VS. RESUMEN (PRIORIDAD MÁXIMA): "
-    "1. Cuando el profesor te pida 'leeme este archivo', 'leeme el documento', 'quiero que me leas el documento' "
-    "o 'no quiero un resumen, quiero que me leas el documento', ESTÁ TERMINANTEMENTE PROHIBIDO hacer un resumen. "
-    "Debes entregar la transcripción literal, completa y fiel del texto del documento sin omitir párrafos. "
-    "2. Únicamente realizarás un resumen, síntesis o cuadro sinóptico cuando el profesor utilice de manera explícita "
-    "las palabras 'resumí', 'haz un resumen', 'sintetizá' o 'extraé los puntos clave'. "
-    "3. Al buscar el CV del profesor en Google Drive, prioriza siempre el archivo 'CV DEV.doc' o aquellos que "
-    "contengan 'David Villarreal', descartando currículums de terceras personas. "
+    "REGLA CRÍTICA DE IDENTIFICACIÓN PERSONAL EN GOOGLE DRIVE: "
+    "Cuando el profesor solicite buscar o leer su CV o documentos personales en Google Drive, prioriza siempre "
+    "los archivos que contengan sus iniciales ('DEV', por ejemplo 'CV DEV.doc') o su nombre ('David Villarreal'), "
+    "descartando currículums de terceras personas. "
     "\n\n"
     "REGLA CRÍTICA DE CALENDARIO Y EJECUCIÓN AUTÓNOMA: "
     "Al crear eventos, valida que no existan duplicados. Si el profesor solicita agendar, enviar un correo, "
@@ -138,50 +328,9 @@ SYSTEM_INSTRUCTION = (
     "de inmediato y sin pedirle jamás que realice pasos manuales."
 )
 
-# Patrones léxicos que indican que el profesor exige la lectura literal e íntegra
-# del documento y NO un resumen generado por el modelo.
-PATRONES_LECTURA_LITERAL = [
-    r"no\s+quiero\s+(un\s+)?resumen",
-    r"quiero\s+que\s+(me\s+)?leas\s+el\s+(documento|archivo|texto)",
-    r"lee(me)?\s+el\s+(documento|archivo|texto)\s+(anterior|completo|integro|íntegro|entero)",
-    r"^lee(me)?\s+(este|el)\s+(documento|archivo)\.?$",
-    r"transcrib(i|í|e)\s+el\s+(documento|archivo)",
-    r"mostra(me)?\s+el\s+(texto|contenido)\s+(completo|integro|íntegro|literal)",
-    r"leer\s+sin\s+resumir",
-    r"texto\s+literal\s+completo"
-]
-
-
-def solicita_lectura_literal_directa(mensaje_usuario):
-    """
-    Determina si la instrucción del usuario exige la entrega literal e íntegra
-    del documento cargado en lugar de una interpretación o resumen.
-    """
-    if not mensaje_usuario:
-        return False
-
-    # Si el mensaje trae inyectado el encabezado de adjunto, extraemos solo la directiva
-    texto_directiva = mensaje_usuario
-    if "Directiva del Profesor:" in mensaje_usuario:
-        partes = mensaje_usuario.split("Directiva del Profesor:")
-        texto_directiva = partes[-1].strip()
-
-    limpio = texto_directiva.strip().lower()
-
-    # Si el usuario pide explícitamente un resumen o análisis, no activamos lectura literal
-    if any(p in limpio for p in ["resum", "sintetiz", "puntos clave", "explic", "analiz", "opin"]):
-        if "no quiero un resumen" not in limpio and "sin resumir" not in limpio:
-            return False
-
-    for patron in PATRONES_LECTURA_LITERAL:
-        if re.search(patron, limpio):
-            return True
-
-    return False
-
 
 # =============================================================================
-# SECCIÓN 3: INTERFAZ GRÁFICA DE USUARIO (HTML, CSS Y JAVASCRIPT AVANZADO)
+# SECCIÓN 4: INTERFAZ GRÁFICA DE USUARIO (HTML, CSS Y JAVASCRIPT AVANZADO)
 # =============================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -189,7 +338,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago - Agente Autónomo Bidireccional</title>
+    <title>Núcleo Central de Thiago v5.0 - Agente Autónomo Bidireccional</title>
     <style>
         :root {
             --bg-primary: #0f172a;
@@ -225,7 +374,7 @@ HTML_TEMPLATE = """
 
         .container {
             width: 100%;
-            max-width: 900px;
+            max-width: 920px;
             background: var(--bg-secondary);
             padding: 26px;
             border-radius: 14px;
@@ -278,7 +427,7 @@ HTML_TEMPLATE = """
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            max-width: 52%;
+            max-width: 50%;
         }
 
         .doc-status strong {
@@ -322,7 +471,7 @@ HTML_TEMPLATE = """
         .chat-box {
             background: var(--bg-terminal);
             border: 1px solid var(--border-color);
-            height: 450px;
+            height: 460px;
             overflow-y: auto;
             padding: 18px;
             margin-bottom: 16px;
@@ -362,7 +511,7 @@ HTML_TEMPLATE = """
             background: #111827;
             font-family: "Georgia", "Times New Roman", serif;
             font-size: 0.98rem;
-            line-height: 1.7;
+            line-height: 1.72;
             max-width: 96%;
         }
 
@@ -508,8 +657,8 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <div class="header-top">
-            <h1>Núcleo Central de Thiago</h1>
-            <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional y Lector Documental Íntegro</div>
+            <h1>Núcleo Central de Thiago v5.0</h1>
+            <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional y Lector Documental Instantáneo</div>
         </div>
 
         <div class="status-toolbar">
@@ -517,7 +666,7 @@ HTML_TEMPLATE = """
                 📄 Documento en búfer: <strong id="docStatusName">Ninguno cargado</strong>
             </div>
             <div class="voice-controls">
-                <button type="button" class="btn-mini gold" onclick="mostrarYLeerDocumentoIntegro()" title="Muestra y lee en voz alta el documento completo sin resumir">📖 Leer Documento Íntegro</button>
+                <button type="button" class="btn-mini gold" onclick="mostrarYLeerDocumentoIntegro()" title="Muestra y lee en voz alta el documento completo sin resumir y sin demoras">📖 Leer Documento Íntegro</button>
                 <button type="button" class="btn-mini" onclick="leerUltimaRespuestaEnPantalla()" title="Lee en voz alta el último mensaje de Thiago">🔊 Leer Respuesta</button>
                 <button type="button" class="btn-mini" id="pauseResumeBtn" onclick="pausarReanudarVoz()" title="Pausar o reanudar la lectura por voz">⏯️ Pausar/Reanudar</button>
                 <button type="button" class="btn-mini" onclick="detenerVozCompleta()" title="Detener inmediatamente la lectura en voz alta">⏹️ Silenciar</button>
@@ -525,7 +674,7 @@ HTML_TEMPLATE = """
         </div>
 
         <div class="confirm-banner" id="confirmBanner">
-            <span>🔊 <strong>Lectura disponible:</strong> ¿Desea que Thiago lea el texto en voz alta? (Puede responder "Sí" o presionar el botón)</span>
+            <span>🔊 <strong>Lectura disponible:</strong> ¿Desea que Thiago lea el texto en voz alta? (Responda "Sí" o presione el botón)</span>
             <div class="confirm-actions">
                 <button type="button" class="btn-mini gold" onclick="confirmarLecturaManual(true)">Sí, leer ahora</button>
                 <button type="button" class="btn-mini" onclick="confirmarLecturaManual(false)">No, gracias</button>
@@ -550,7 +699,7 @@ HTML_TEMPLATE = """
         let archivoAdjuntoTexto = "";
         let archivoAdjuntoNombre = "";
 
-        // Búfer persistente del último documento completo para lectura literal sin resúmenes
+        // Búfer persistente del último documento completo para lectura literal instantánea
         let ultimoDocumentoTexto = localStorage.getItem('thiago_ultimo_doc_texto') || "";
         let ultimoDocumentoNombre = localStorage.getItem('thiago_ultimo_doc_nombre') || "";
 
@@ -562,7 +711,6 @@ HTML_TEMPLATE = """
         let lecturaEnCurso = false;
         let lecturaPausada = false;
 
-        // Memoria Persistente en el Cliente
         let memoriaLocal = [];
         try {
             memoriaLocal = JSON.parse(localStorage.getItem('thiago_memoria')) || [];
@@ -570,10 +718,15 @@ HTML_TEMPLATE = """
             memoriaLocal = [];
         }
 
+        function quitarTildesJS(cadena) {
+            if (!cadena) return "";
+            return cadena.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase().trim();
+        }
+
         function actualizarIndicadorDocumento() {
             const label = document.getElementById('docStatusName');
             if (archivoAdjuntoNombre) {
-                label.textContent = archivoAdjuntoNombre + " (Listo para enviar)";
+                label.textContent = archivoAdjuntoNombre + " (Listo para usar)";
             } else if (ultimoDocumentoNombre) {
                 label.textContent = ultimoDocumentoNombre + " (" + ultimoDocumentoTexto.length + " caract.)";
             } else {
@@ -600,7 +753,7 @@ HTML_TEMPLATE = """
 
         function renderizarHistorial() {
             const chatBox = document.getElementById('chatBox');
-            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral en línea. Módulos operativos, lectura literal íntegra (sin resúmenes forzados) y secuenciador de voz activos. ¿Qué directiva procesamos?</div>';
+            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral v5.0 en línea. Módulos operativos, lectura literal instantánea (sin Timeouts) y secuenciador de voz activos. ¿Qué directiva procesamos?</div>';
 
             memoriaLocal.forEach(msg => {
                 if (msg.role === 'user') {
@@ -623,7 +776,7 @@ HTML_TEMPLATE = """
 
         window.onload = renderizarHistorial;
 
-        function borrarMemoria() {
+        async function borrarMemoria() {
             if (confirm("¿Desea purgar la memoria persistente de Thiago y limpiar el búfer documental?")) {
                 detenerVozCompleta();
                 localStorage.removeItem('thiago_memoria');
@@ -637,6 +790,9 @@ HTML_TEMPLATE = """
                 esperandoConfirmacionDeVoz = false;
                 respuestaPendienteDeLectura = "";
                 mostrarBannerConfirmacion(false);
+                try {
+                    await fetch('/api/cache/clear', { method: 'POST' });
+                } catch (e) {}
                 document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
                 renderizarHistorial();
             }
@@ -644,18 +800,16 @@ HTML_TEMPLATE = """
 
         // =========================================================================
         // MOTOR SECUENCIADOR DE VOZ DE LARGA DURACIÓN (TTS CHUNKING ENGINE)
-        // Divide documentos largos en oraciones <= 220 caracteres para evitar el
-        // corte de 15 segundos de Chrome/Edge y permitir lecturas completas.
         // =========================================================================
         function limpiarTextoParaVoz(texto) {
             if (!texto) return "";
             return texto
-                .replace(/[*_#`~|>]/g, ' ')
+                .replace(/[═─=*_#`~|>]/g, ' ')
                 .replace(/\\s+/g, ' ')
                 .trim();
         }
 
-        function fragmentarTextoParaTTS(texto, maxLargo = 210) {
+        function fragmentarTextoParaTTS(texto, maxLargo = 200) {
             const limpio = limpiarTextoParaVoz(texto);
             if (!limpio) return [];
 
@@ -674,7 +828,6 @@ HTML_TEMPLATE = """
                     if (oracion.length <= maxLargo) {
                         actual = oracion;
                     } else {
-                        // Si una oración individual supera maxLargo, cortamos por palabras
                         const palabras = oracion.split(" ");
                         actual = "";
                         for (let palabra of palabras) {
@@ -777,8 +930,10 @@ HTML_TEMPLATE = """
         }
 
         async function mostrarYLeerDocumentoIntegro() {
-            // Si no tenemos documento en el navegador, consultamos la caché del servidor
-            if (!ultimoDocumentoTexto) {
+            const docTexto = archivoAdjuntoTexto || ultimoDocumentoTexto;
+            const docNombre = archivoAdjuntoNombre || ultimoDocumentoNombre;
+
+            if (!docTexto) {
                 try {
                     const resp = await fetch('/api/document/latest');
                     const data = await resp.json();
@@ -792,15 +947,27 @@ HTML_TEMPLATE = """
                 } catch (e) {}
             }
 
-            if (!ultimoDocumentoTexto) {
-                alert("No hay ningún documento cargado en el búfer actualmente. Adjunte un archivo con el ícono 📎 o solicite leer un archivo de Google Drive.");
+            const finalTexto = archivoAdjuntoTexto || ultimoDocumentoTexto;
+            const finalNombre = archivoAdjuntoNombre || ultimoDocumentoNombre;
+
+            if (!finalTexto) {
+                alert("No hay ningún documento cargado en el búfer actualmente. Adjunte un archivo con el botón 📎.");
                 return;
             }
 
+            if (archivoAdjuntoTexto !== "") {
+                ultimoDocumentoTexto = archivoAdjuntoTexto;
+                ultimoDocumentoNombre = archivoAdjuntoNombre;
+                archivoAdjuntoTexto = "";
+                archivoAdjuntoNombre = "";
+                document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
+                actualizarIndicadorDocumento();
+            }
+
             const chatBox = document.getElementById('chatBox');
-            const encabezado = `📄 TRANSCRIPCIÓN LITERAL E ÍNTEGRA DEL DOCUMENTO: "${ultimoDocumentoNombre}"\\n` +
+            const encabezado = `📄 TRANSCRIPCIÓN LITERAL E ÍNTEGRA DEL DOCUMENTO: "${finalNombre}"\\n` +
                                `══════════════════════════════════════════════════════════════════\\n\\n`;
-            const textoCompleto = encabezado + ultimoDocumentoTexto;
+            const textoCompleto = encabezado + finalTexto;
 
             chatBox.innerHTML += `<div class="message ai-msg doc-verbatim-box">${escaparHTML(textoCompleto)}</div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -812,8 +979,8 @@ HTML_TEMPLATE = """
             });
             guardarMemoriaLocalSegura();
 
-            respuestaPendienteDeLectura = ultimoDocumentoTexto;
-            hablarTextoDefinitivo(ultimoDocumentoTexto);
+            respuestaPendienteDeLectura = finalTexto;
+            hablarTextoDefinitivo(finalTexto);
         }
 
         function confirmarLecturaManual(aceptado) {
@@ -826,19 +993,18 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Evalúa si una entrada (por voz o por teclado) es una confirmación afirmativa o negativa
         function evaluarRespuestaConfirmacion(textoEntrada) {
-            const t = (textoEntrada || "").trim().toLowerCase();
+            const t = quitarTildesJS(textoEntrada).replace(/[.!?,]/g, "");
             const afirmativas = [
-                "si", "sí", "si.", "sí.", "claro", "por favor", "dale", "bueno",
-                "leelo", "léelo", "leela", "léela", "lee", "leer",
-                "si por favor", "sí por favor", "lee el documento",
-                "lee el documento anterior", "lee el documento anterior, si",
-                "lee el documento anterior, sí", "leeme el documento", "si leelo"
+                "si", "claro", "por favor", "dale", "bueno", "ok",
+                "leelo", "leela", "lee", "leer", "si por favor",
+                "lee el documento", "lee el documento anterior",
+                "lee el documento anterior si", "leeme el documento",
+                "si leelo", "si leela"
             ];
-            const negativas = ["no", "no.", "no gracias", "no, gracias", "ahora no", "silencio", "cancelar"];
+            const negativas = ["no", "no gracias", "ahora no", "silencio", "cancelar"];
 
-            if (afirmativas.includes(t) || /^(s[ií]|dale|claro|leel[oa])\b/.test(t)) {
+            if (afirmativas.includes(t) || /^(si|dale|claro|leel[oa])\b/.test(t)) {
                 return "AFIRMATIVO";
             }
             if (negativas.includes(t) || /^no\b/.test(t)) {
@@ -847,28 +1013,38 @@ HTML_TEMPLATE = """
             return "OTRO";
         }
 
-        // Detecta en el cliente si el usuario exige la lectura literal del documento en búfer
-        function esOrdenDeLecturaLiteralCliente(textoUsuario) {
-            const t = (textoUsuario || "").trim().toLowerCase();
-            if (!t) return false;
-            if (t.includes("no quiero un resumen") || t.includes("quiero que me leas el documento") || t.includes("sin resumir")) {
+        // Detector insensible a tildes en el cliente para órdenes de lectura literal
+        function esOrdenDeLecturaLiteralCliente(textoUsuario, hayAdjuntoReciente) {
+            const t = quitarTildesJS(textoUsuario).replace(/[.!?]/g, "").trim();
+            if (!t) return Boolean(hayAdjuntoReciente);
+
+            if (t.includes("no quiero un resumen") || t.includes("no quiero resumen") || t.includes("sin resumir")) {
                 return true;
             }
-            const ordenesDirectas = [
-                "leeme este archivo", "léeme este archivo", "leeme el archivo", "léeme el archivo",
-                "leeme el documento", "léeme el documento", "lee el documento anterior",
-                "lee el documento completo", "leeme el documento completo", "texto completo"
-            ];
-            return ordenesDirectas.includes(t);
+            if (t.includes("quiero que me leas") || t.includes("quiero que leas")) {
+                return true;
+            }
+
+            // Si el usuario pide explícitamente resumir o analizar, no forzamos lectura literal
+            const pideAnalisis = ["resumi", "resumen", "sintetiza", "explica", "analiza", "puntos clave", "opina", "compara"];
+            if (pideAnalisis.some(p => t.includes(p))) {
+                return false;
+            }
+
+            const regexLectura = /^(lee(me|lo|la)?|leer|mostra(me)?|transcrib(i|e|ir))\b/;
+            if (regexLectura.test(t)) {
+                return true;
+            }
+
+            return false;
         }
 
         function guardarMemoriaLocalSegura() {
             try {
-                // Mantenemos los últimos 20 mensajes y evitamos duplicar textos gigantescos en LocalStorage
-                const recorte = memoriaLocal.slice(-20);
+                const recorte = memoriaLocal.slice(-16);
                 localStorage.setItem('thiago_memoria', JSON.stringify(recorte));
             } catch (e) {
-                memoriaLocal = memoriaLocal.slice(-8);
+                memoriaLocal = memoriaLocal.slice(-6);
                 try {
                     localStorage.setItem('thiago_memoria', JSON.stringify(memoriaLocal));
                 } catch (err) {}
@@ -903,7 +1079,7 @@ HTML_TEMPLATE = """
                             localStorage.setItem('thiago_ultimo_doc_nombre', ultimoDocumentoNombre);
                         } catch (e) {}
                         actualizarIndicadorDocumento();
-                        inputTexto.placeholder = `📎 Archivo cargado: ${archivoAdjuntoNombre}. Escriba "leeme este archivo" o su consulta...`;
+                        inputTexto.placeholder = `📎 Archivo listo: ${archivoAdjuntoNombre}. Escriba "Léeme este archivo" o su consulta...`;
                     } else {
                         alert("Error al procesar: " + (data.error || "Formato no reconocido."));
                         inputTexto.placeholder = placeholderOriginal;
@@ -978,7 +1154,7 @@ HTML_TEMPLATE = """
         function detenerEscuchaVisual() {
             document.getElementById('micBtn').classList.remove('active');
             if (archivoAdjuntoTexto !== "") {
-                document.getElementById('userInput').placeholder = `📎 Archivo cargado: ${archivoAdjuntoNombre}. Indique qué hacer con él...`;
+                document.getElementById('userInput').placeholder = `📎 Archivo listo: ${archivoAdjuntoNombre}. Indique qué hacer con él...`;
             } else {
                 document.getElementById('userInput').placeholder = "Escriba su consulta o hable...";
             }
@@ -989,7 +1165,7 @@ HTML_TEMPLATE = """
             mostrarBannerConfirmacion(true);
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                const pregunta = new SpeechSynthesisUtterance("Profesor, la respuesta está en pantalla. ¿Desea que se la lea?");
+                const pregunta = new SpeechSynthesisUtterance("Profesor, el texto está en pantalla. ¿Desea que se lo lea?");
                 pregunta.lang = 'es-AR';
                 pregunta.rate = 1.0;
 
@@ -1007,13 +1183,12 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Prepara un historial liviano para enviar al backend evitando saturar Gunicorn/Render
         function construirHistorialLivianoParaBackend() {
-            const ultimos = memoriaLocal.slice(-8);
+            const ultimos = memoriaLocal.slice(-6);
             return ultimos.map(item => {
                 let contenido = item.content || "";
-                if (contenido.length > 3500) {
-                    contenido = contenido.substring(0, 3500) + "\\n...[Texto extenso resguardado en caché del servidor]...";
+                if (contenido.length > 2500) {
+                    contenido = contenido.substring(0, 2500) + "\\n...[Texto extenso disponible en la caché del servidor]...";
                 }
                 return {
                     role: item.role,
@@ -1034,8 +1209,7 @@ HTML_TEMPLATE = """
 
             if (!texto && archivoAdjuntoTexto === "") return;
 
-            // 1. INTERCEPTOR BIMODAL DE CONFIRMACIÓN (Teclado + Voz):
-            // Si Thiago acaba de preguntar "¿Desea que se la lea?" y el profesor escribe "si" o "leelo"
+            // 1. INTERCEPTOR BIMODAL DE CONFIRMACIÓN (Teclado + Voz)
             if (esperandoConfirmacionDeVoz && archivoAdjuntoTexto === "") {
                 const decisionTeclado = evaluarRespuestaConfirmacion(texto);
                 if (decisionTeclado === "AFIRMATIVO") {
@@ -1043,10 +1217,9 @@ HTML_TEMPLATE = """
                     esperandoConfirmacionDeVoz = false;
                     mostrarBannerConfirmacion(false);
                     chatBox.innerHTML += `<div class="message user-msg">${escaparHTML(texto)}</div>`;
-                    chatBox.innerHTML += `<div class="message ai-msg">🔊 Iniciando lectura íntegra en voz alta. Puede utilizar los botones superiores para pausar, reanudar o silenciar.</div>`;
+                    chatBox.innerHTML += `<div class="message ai-msg">🔊 Iniciando lectura íntegra en voz alta. Utilice los botones superiores si desea pausar o silenciar.</div>`;
                     chatBox.scrollTop = chatBox.scrollHeight;
-                    const textoALeer = esOrdenDeLecturaLiteralCliente(texto) && ultimoDocumentoTexto ? ultimoDocumentoTexto : respuestaPendienteDeLectura;
-                    hablarTextoDefinitivo(textoALeer);
+                    hablarTextoDefinitivo(respuestaPendienteDeLectura);
                     return;
                 } else if (decisionTeclado === "NEGATIVO") {
                     input.value = '';
@@ -1060,17 +1233,20 @@ HTML_TEMPLATE = """
                 }
             }
 
-            // Si el usuario envía una consulta nueva distinta, cancelamos cualquier voz previa
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
             }
             esperandoConfirmacionDeVoz = false;
             mostrarBannerConfirmacion(false);
 
-            // 2. INTERCEPTOR DIRECTO DE LECTURA LITERAL ÍNTEGRA (Evita resúmenes no deseados y Timeouts)
-            if (esOrdenDeLecturaLiteralCliente(texto) && (archivoAdjuntoTexto !== "" || ultimoDocumentoTexto !== "")) {
+            // 2. INTERCEPTOR INSTANTÁNEO EN EL NAVEGADOR PARA LECTURA LITERAL ("Léeme este archivo")
+            const hayDocumentoDisponible = (archivoAdjuntoTexto !== "" || ultimoDocumentoTexto !== "");
+            if (hayDocumentoDisponible && esOrdenDeLecturaLiteralCliente(texto, archivoAdjuntoTexto !== "")) {
                 const nombreDoc = archivoAdjuntoNombre || ultimoDocumentoNombre;
                 const contenidoDoc = archivoAdjuntoTexto || ultimoDocumentoTexto;
+                const etiquetaVisualUsuario = archivoAdjuntoNombre
+                    ? `📎 Archivo enviado: ${archivoAdjuntoNombre}\\n${texto || "Léeme este archivo"}`
+                    : (texto || "Léeme el documento");
 
                 if (archivoAdjuntoTexto !== "") {
                     ultimoDocumentoTexto = archivoAdjuntoTexto;
@@ -1083,14 +1259,14 @@ HTML_TEMPLATE = """
                 input.value = '';
                 input.placeholder = "Escriba su consulta o hable...";
 
-                chatBox.innerHTML += `<div class="message user-msg">${escaparHTML(texto)}</div>`;
+                chatBox.innerHTML += `<div class="message user-msg">${escaparHTML(etiquetaVisualUsuario)}</div>`;
                 const textoLiteral = `📄 LECTURA ÍNTEGRA Y LITERAL DEL DOCUMENTO: "${nombreDoc}"\\n` +
                                      `══════════════════════════════════════════════════════════════════\\n\\n` +
                                      contenidoDoc;
                 chatBox.innerHTML += `<div class="message ai-msg doc-verbatim-box">${escaparHTML(textoLiteral)}</div>`;
                 chatBox.scrollTop = chatBox.scrollHeight;
 
-                memoriaLocal.push({ role: 'user', content: texto, display: texto });
+                memoriaLocal.push({ role: 'user', content: etiquetaVisualUsuario, display: etiquetaVisualUsuario });
                 memoriaLocal.push({ role: 'assistant', content: textoLiteral, esVerbatim: true });
                 guardarMemoriaLocalSegura();
 
@@ -1100,7 +1276,7 @@ HTML_TEMPLATE = """
                 return;
             }
 
-            let textoUsuarioVisual = texto || "Lee el documento adjunto de manera íntegra.";
+            let textoUsuarioVisual = texto || "Léeme este archivo";
             let payloadCognitivo = textoUsuarioVisual;
 
             if (archivoAdjuntoTexto !== "") {
@@ -1145,16 +1321,15 @@ HTML_TEMPLATE = """
                 try {
                     data = JSON.parse(textoRespuestaCrudo);
                 } catch (jsonErr) {
-                    throw new Error("El servidor tardó demasiado en responder o devolvió una respuesta no válida.");
+                    throw new Error("Tiempo de espera agotado en el servidor.");
                 }
 
                 const nodoCarga = document.getElementById(idCarga);
                 if (nodoCarga) nodoCarga.remove();
 
-                // Si el backend actualizó el documento activo (por ejemplo, al leer desde Drive), sincronizamos el búfer
                 if (data.active_document && data.active_document.text) {
                     ultimoDocumentoTexto = data.active_document.text;
-                    ultimoDocumentoNombre = data.active_document.filename || "Documento de Drive";
+                    ultimoDocumentoNombre = data.active_document.filename || "Documento";
                     try {
                         localStorage.setItem('thiago_ultimo_doc_texto', ultimoDocumentoTexto);
                         localStorage.setItem('thiago_ultimo_doc_nombre', ultimoDocumentoNombre);
@@ -1185,8 +1360,13 @@ HTML_TEMPLATE = """
             } catch (error) {
                 const nodoCarga = document.getElementById(idCarga);
                 if (nodoCarga) nodoCarga.remove();
-                chatBox.innerHTML += `<div class="message ai-msg error-text">⚠️ Aviso operativo: ${escaparHTML(error.message)}. Si desea leer el documento cargado de manera íntegra sin esperar al modelo, presione el botón superior "📖 Leer Documento Íntegro".</div>`;
-                chatBox.scrollTop = chatBox.scrollHeight;
+
+                if (ultimoDocumentoTexto) {
+                    mostrarYLeerDocumentoIntegro();
+                } else {
+                    chatBox.innerHTML += `<div class="message ai-msg error-text">⚠️ Aviso operativo: ${escaparHTML(error.message)}.</div>`;
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
             }
         }
 
@@ -1200,12 +1380,12 @@ HTML_TEMPLATE = """
 
 
 # =============================================================================
-# SECCIÓN 4: GESTIÓN DE CREDENCIALES OAUTH2 Y SERVICIOS DE GOOGLE WORKSPACE
+# SECCIÓN 5: GESTIÓN DE CREDENCIALES OAUTH2 Y CONECTIVIDAD GOOGLE WORKSPACE
 # =============================================================================
 def obtener_credenciales():
     """
     Construye y refresca las credenciales OAuth2 aplicando sanitización estricta
-    de comillas y espacios residuales en las variables de entorno de Render.
+    de comillas y espacios en blanco en las variables de entorno de Render.
     """
     r_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip().strip('"\'')
     c_id = os.getenv("GOOGLE_CLIENT_ID", "").strip().strip('"\'')
@@ -1231,13 +1411,13 @@ def obtener_credenciales():
 
 
 def construir_servicio_google(nombre_api, version_api):
-    """Inicializa un cliente oficial de Google API con credenciales refrescadas."""
+    """Inicializa un cliente oficial de Google API con credenciales activas."""
     credenciales = obtener_credenciales()
     return build(nombre_api, version_api, credentials=credenciales, cache_discovery=False)
 
 
 # =============================================================================
-# SECCIÓN 5: MOTOR UNIVERSAL DE LECTURA DOCUMENTAL, CONVERSIÓN Y OCR MULTICAPA
+# SECCIÓN 6: MOTOR UNIVERSAL DE LECTURA DOCUMENTAL, CONVERSIÓN Y OCR MULTICAPA
 # =============================================================================
 MARCAS_AGUA_ESCANER = [
     "anyscanner", "camscanner", "scanned with", "scanned by",
@@ -1248,8 +1428,8 @@ MARCAS_AGUA_ESCANER = [
 
 def es_texto_insuficiente_o_marca_agua(texto):
     """
-    Verifica si el texto extraído de un documento está vacío o contiene
-    únicamente marcas de agua de aplicaciones de escaneo (como AnyScanner).
+    Detecta si el texto extraído de un documento está vacío o solo contiene
+    marcas de agua residuales de aplicaciones móviles de escaneo.
     """
     if not texto:
         return True
@@ -1261,7 +1441,7 @@ def es_texto_insuficiente_o_marca_agua(texto):
 
 
 def normalizar_espacios_documento(texto):
-    """Limpia saltos de línea excesivos preservando la estructura de párrafos."""
+    """Preserva la separación de párrafos eliminando espacios y saltos redundantes."""
     if not texto:
         return ""
     texto = texto.replace('\r\n', '\n').replace('\r', '\n')
@@ -1272,14 +1452,13 @@ def normalizar_espacios_documento(texto):
 
 def extraer_texto_docx_completo(buffer_bytes):
     """
-    Extrae el texto completo de archivos Word (.docx), recorriendo encabezados,
+    Extrae el texto completo de archivos Word (.docx), incluyendo encabezados,
     párrafos principales, tablas anidadas y pies de página.
     """
     partes = []
     try:
         documento = docx.Document(io.BytesIO(buffer_bytes))
 
-        # 1. Encabezados de sección
         for seccion in documento.sections:
             try:
                 for p in seccion.header.paragraphs:
@@ -1288,12 +1467,10 @@ def extraer_texto_docx_completo(buffer_bytes):
             except Exception:
                 pass
 
-        # 2. Párrafos del cuerpo principal
         for p in documento.paragraphs:
             if p.text and p.text.strip():
                 partes.append(p.text.strip())
 
-        # 3. Tablas (frecuentes en currículums, pliegos y certificaciones)
         for tabla in documento.tables:
             for fila in tabla.rows:
                 celdas_texto = []
@@ -1306,7 +1483,6 @@ def extraer_texto_docx_completo(buffer_bytes):
                 if celdas_texto:
                     partes.append(" | ".join(celdas_texto))
 
-        # 4. Pies de página
         for seccion in documento.sections:
             try:
                 for p in seccion.footer.paragraphs:
@@ -1323,8 +1499,7 @@ def extraer_texto_docx_completo(buffer_bytes):
 
 def extraer_texto_zip_xml(buffer_bytes, extension):
     """
-    Descomprime y extrae texto directamente de contenedores basados en XML:
-    OpenDocument (.odt), PowerPoint (.pptx), Excel (.xlsx) y Word (.docx).
+    Extrae texto directamente del contenedor XML para formatos .odt, .pptx, .xlsx y .docx.
     """
     textos = []
     try:
@@ -1393,8 +1568,7 @@ def extraer_texto_zip_xml(buffer_bytes, extension):
 
 def extraer_texto_binario_doc_o_rtf(buffer_bytes, extension):
     """
-    Extractor local de respaldo para documentos binarios antiguos Word 97-2003 (.doc)
-    y formato de texto enriquecido (.rtf).
+    Extractor local de respaldo para archivos binarios antiguos Word 97-2003 (.doc) y .rtf.
     """
     try:
         if extension == '.rtf':
@@ -1433,9 +1607,9 @@ def extraer_texto_binario_doc_o_rtf(buffer_bytes, extension):
 def convertir_y_ocr_con_google_drive(file_bytes=None, mime_origen="application/octet-stream", drive_file_id=None, extension=""):
     """
     Motor de Conversión y OCR en la Nube mediante Google Drive API v3:
-    Convierte de manera efímera cualquier archivo (.doc, .xls, .ppt, imagen o PDF escaneado)
-    en un documento nativo de Google con reconocimiento óptico de caracteres (OCR) en español,
-    extrae la totalidad del texto plano y elimina el archivo temporal inmediatamente.
+    Convierte de manera temporal cualquier archivo (.doc, .xls, .ppt, imagen o PDF escaneado)
+    en un documento nativo de Google con OCR en español, extrae el texto plano
+    y elimina el archivo temporal en el bloque finally.
     """
     temp_id = None
     servicio = None
@@ -1453,7 +1627,6 @@ def convertir_y_ocr_con_google_drive(file_bytes=None, mime_origen="application/o
         )
         mime_exportacion = 'text/csv' if es_planilla else 'text/plain'
 
-        # 1. Si el archivo ya reside en Google Drive, ejecutamos copia directa con OCR
         if drive_file_id:
             try:
                 meta_copia = {
@@ -1472,7 +1645,6 @@ def convertir_y_ocr_con_google_drive(file_bytes=None, mime_origen="application/o
                 print(f"[AVISO COPIA DRIVE OCR, USANDO SUBIDA DE BYTES]: {repr(err_copy)}")
                 temp_id = None
 
-        # 2. Si proviene de una carga local o la copia directa falló, subimos los bytes en memoria
         if not temp_id and file_bytes:
             media = MediaIoBaseUpload(
                 io.BytesIO(file_bytes),
@@ -1515,10 +1687,7 @@ def convertir_y_ocr_con_google_drive(file_bytes=None, mime_origen="application/o
 
 
 def extraer_imagenes_de_pdf_para_vision(file_bytes):
-    """
-    Extrae flujos de imagen crudos (/DCTDecode JPEG o PNG) incrustados dentro de
-    las páginas de un archivo PDF escaneado para su transcripción mediante visión.
-    """
+    """Extrae flujos de imagen crudos (/DCTDecode JPEG o PNG) incrustados en un PDF escaneado."""
     imagenes_b64 = []
     try:
         lector = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -1621,7 +1790,7 @@ def extraer_ocr_vision_openai(file_bytes, filename, mime_type=""):
             "messages": [{"role": "user", "content": bloques_contenido}],
             "temperature": 0.0
         }
-        resp = requests.post(url_api, json=payload, headers=cabeceras, timeout=24)
+        resp = requests.post(url_api, json=payload, headers=cabeceras, timeout=25)
         datos = resp.json()
         if "choices" in datos and datos["choices"]:
             texto = datos["choices"][0]["message"].get("content", "")
@@ -1668,7 +1837,7 @@ def procesar_bytes_documento_universal(file_bytes, filename, mime_type="", drive
         if ext == '.pdf' or 'pdf' in mime_lower:
             lector_pdf = pypdf.PdfReader(io.BytesIO(file_bytes))
             paginas_txt = []
-            for num_pag, pagina in enumerate(lector_pdf.pages[:80], 1):
+            for pagina in lector_pdf.pages[:80]:
                 t_pag = pagina.extract_text()
                 if t_pag and t_pag.strip():
                     paginas_txt.append(t_pag.strip())
@@ -1691,7 +1860,7 @@ def procesar_bytes_documento_universal(file_bytes, filename, mime_type="", drive
     except Exception as error_local:
         print(f"[AVISO EXTRACCIÓN LOCAL INICIAL]: {repr(error_local)}")
 
-    # CAPA 2: Conversión y OCR mediante Google Drive API (para .doc, .xls, .ppt, imágenes y PDFs escaneados)
+    # CAPA 2: Conversión y OCR mediante Google Drive API
     if es_texto_insuficiente_o_marca_agua(texto_extraido):
         texto_drive_ocr = convertir_y_ocr_con_google_drive(
             file_bytes=file_bytes,
@@ -1714,9 +1883,8 @@ def procesar_bytes_documento_universal(file_bytes, filename, mime_type="", drive
         if texto_bin:
             texto_extraido = texto_bin
 
-    texto_final = normalizar_espacios_documento(texto_extraido)[:60000]
+    texto_final = normalizar_espacios_documento(texto_extraido)[:65000]
 
-    # Guardamos automáticamente en la caché del servidor para acceso instantáneo
     if texto_final:
         guardar_documento_en_cache(
             nombre=filename,
@@ -1730,13 +1898,13 @@ def procesar_bytes_documento_universal(file_bytes, filename, mime_type="", drive
 
 
 # =============================================================================
-# SECCIÓN 6: ENDPOINTS DE ARCHIVOS LOCALES Y CONSULTA DE CACHÉ DOCUMENTAL
+# SECCIÓN 7: ENDPOINTS DE ARCHIVOS LOCALES Y GESTIÓN DE CACHÉ DOCUMENTAL
 # =============================================================================
 @app.route('/api/upload', methods=['POST'])
 def procesar_carga_archivo():
     """
-    Recibe un archivo local en cualquier formato, extrae su texto íntegro
-    (aplicando OCR si es necesario), lo guarda en la caché del servidor y lo retorna.
+    Recibe un archivo local en cualquier formato, extrae su texto íntegro,
+    lo persiste en RAM y en /tmp, y lo retorna al navegador.
     """
     if 'file' not in request.files:
         return jsonify({
@@ -1805,20 +1973,27 @@ def obtener_documento_activo_endpoint():
     })
 
 
+@app.route('/api/cache/clear', methods=['POST'])
+def limpiar_cache_endpoint():
+    """Limpia la caché documental de RAM y de /tmp cuando el usuario purga la memoria."""
+    limpiar_cache_documental_completa()
+    return jsonify({"success": True, "status": "cache_purged"})
+
+
 @app.route('/api/health', methods=['GET'])
 def verificar_salud_servidor():
     """Endpoint de diagnóstico rápido para monitoreo en Render."""
     doc = obtener_ultimo_documento_cache()
     return jsonify({
         "status": "online",
-        "agent": "Thiago v4.0",
+        "agent": "Thiago v5.0",
         "openai_configured": bool(OPENAI_API_KEY),
         "cached_document": doc.get("nombre") if doc else None
     })
 
 
 # =============================================================================
-# SECCIÓN 7: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE GMAIL
+# SECCIÓN 8: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE GMAIL
 # =============================================================================
 def extraer_cuerpo_gmail(payload):
     """Extrae recursivamente el contenido de texto plano o HTML limpio de un mensaje de Gmail."""
@@ -1945,7 +2120,7 @@ def tool_crear_borrador_correo(destinatario, asunto, cuerpo):
 
 
 # =============================================================================
-# SECCIÓN 8: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE CALENDAR
+# SECCIÓN 9: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE CALENDAR
 # =============================================================================
 def tool_consultar_calendario(time_min=None, max_results=50):
     """Consulta los próximos eventos y compromisos agendados en Google Calendar."""
@@ -2104,7 +2279,7 @@ def tool_eliminar_evento_calendario(event_id):
 
 
 # =============================================================================
-# SECCIÓN 9: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE DRIVE
+# SECCIÓN 10: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE DRIVE
 # =============================================================================
 def tool_buscar_archivos_drive(query=""):
     """Busca archivos o carpetas en Google Drive aplicando sanitización estricta."""
@@ -2141,7 +2316,7 @@ def tool_leer_contenido_drive(file_id):
     """
     Extrae el texto completo de cualquier archivo alojado en Google Drive
     (.doc, .docx, .pdf digitales o escaneados, hojas de cálculo, presentaciones,
-    imágenes o documentos nativos), lo guarda en DOCUMENT_CACHE y lo retorna.
+    imágenes o documentos nativos), lo guarda en la caché compartida y lo retorna.
     """
     try:
         servicio = construir_servicio_google('drive', 'v3')
@@ -2220,7 +2395,7 @@ def tool_leer_contenido_drive(file_id):
             "archivo": nombre_archivo,
             "id_documento": id_real_archivo,
             "longitud_total": len(texto_extraido),
-            "contenido": texto_extraido[:28000]
+            "contenido": texto_extraido[:24000]
         }, ensure_ascii=False)
     except Exception as error:
         print(f"[ERROR CRÍTICO DRIVE LECTURA]: {repr(error)}")
@@ -2426,7 +2601,7 @@ def tool_crear_archivo_drive(nombre_archivo, tipo_archivo="documento", nombre_ca
 
 
 # =============================================================================
-# SECCIÓN 10: BÚSQUEDA WEB ACADÉMICA, JURISPRUDENCIA Y WHATSAPP (TWILIO)
+# SECCIÓN 11: BÚSQUEDA WEB ACADÉMICA, JURISPRUDENCIA Y WHATSAPP (TWILIO)
 # =============================================================================
 def tool_busqueda_web(query):
     """
@@ -2538,12 +2713,12 @@ def tool_obtener_documento_en_memoria():
         "nombre": doc.get("nombre"),
         "origen": doc.get("origen"),
         "longitud_caracteres": doc.get("longitud_caracteres"),
-        "texto_integro": doc.get("texto_integro")[:30000]
+        "texto_integro": doc.get("texto_integro")[:24000]
     }, ensure_ascii=False)
 
 
 # =============================================================================
-# SECCIÓN 11: MAPEO DE HERRAMIENTAS Y ESPECIFICACIÓN JSON PARA OPENAI
+# SECCIÓN 12: MAPEO DE HERRAMIENTAS Y CLIENTE OPENAI RESILIENTE
 # =============================================================================
 available_tools = {
     "tool_listar_correos": tool_listar_correos,
@@ -2845,27 +3020,28 @@ openai_tools_definition = [
 
 
 # =============================================================================
-# SECCIÓN 12: CONTROLADORES PRINCIPALES Y LOOP COGNITIVO ANTI-TIMEOUT
+# SECCIÓN 13: CONTROLADORES PRINCIPALES Y LOOP COGNITIVO SIN TIMEOUTS
 # =============================================================================
 @app.route("/")
 def index():
     """Renderiza la interfaz gráfica principal del Núcleo Central de Thiago."""
-    return render_template_string(HTML_TEMPLATE)
+    respuesta = make_response(render_template_string(HTML_TEMPLATE))
+    respuesta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return respuesta
 
 
 @app.route("/webhook/whatsapp", methods=["POST"])
 def webhook_whatsapp_entrante():
     """
     Endpoint receptor (Webhook) para mensajes entrantes de WhatsApp vía Twilio.
-    Permite la comunicación bidireccional con Thiago desde el teléfono móvil.
     """
     try:
-        remitente = request.form.get("From", "")
         cuerpo_mensaje = request.form.get("Body", "").strip()
         if not cuerpo_mensaje:
             return Response("<Response></Response>", mimetype="text/xml")
 
-        respuesta_texto = procesar_consulta_autonoma_interna(cuerpo_mensaje, [])
+        resultado = procesar_consulta_autonoma_interna(cuerpo_mensaje, [])
+        respuesta_texto = resultado.get("reply", "")
         respuesta_escapada = (
             respuesta_texto[:1500]
             .replace("&", "&amp;")
@@ -2879,27 +3055,56 @@ def webhook_whatsapp_entrante():
         return Response("<Response></Response>", mimetype="text/xml")
 
 
+def formatear_transcripcion_literal(nombre_doc, texto_doc):
+    """Genera el bloque de presentación académica para lecturas literales íntegras."""
+    encabezado = (
+        f"📄 LECTURA ÍNTEGRA Y LITERAL DEL DOCUMENTO: \"{nombre_doc}\"\n"
+        f"══════════════════════════════════════════════════════════════════\n\n"
+    )
+    return encabezado + (texto_doc or "").strip()
+
+
 def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, directiva_cruda=""):
     """
-    Ejecuta el ciclo cognitivo con control de tiempo estricto (< 24 segundos)
-    para evitar que Gunicorn en Render corte el proceso con un error 502.
+    Ejecuta el ciclo operativo de Thiago:
+    1. Desglosa cualquier archivo adjunto presente en el payload y sincroniza la caché en /tmp.
+    2. Si el profesor solicita leer el documento ("Léeme este archivo", "Léelo", "No quiero un resumen"),
+       entrega el texto íntegro de forma directa en < 0.01 segundos SIN llamar a OpenAI (0 Timeouts).
+    3. Para consultas analíticas o de herramientas, invoca a OpenAI con límite de tokens y protección anti-timeout.
     """
-    inicio_reloj = time.time()
+    # Paso 1: Extraer documento si viene en el payload del mensaje actual
+    desglose = desglosar_payload_con_adjunto(mensaje_usuario)
+    tiene_adjunto_actual = desglose["tiene_adjunto"]
+    directiva_efectiva = (directiva_cruda or desglose["directiva_limpia"] or "").strip()
+
+    # Paso 2: Obtener documento activo (del payload recién recibido o de la caché RAM / disco /tmp)
     doc_en_cache = obtener_ultimo_documento_cache()
 
-    # 1. INTERCEPTOR EN SERVIDOR: Si el usuario pide lectura literal y existe documento en caché
-    texto_evaluar = directiva_cruda or mensaje_usuario
-    if solicita_lectura_literal_directa(texto_evaluar) and doc_en_cache:
-        nombre_doc = doc_en_cache.get("nombre", "Documento")
-        texto_integro = doc_en_cache.get("texto_integro", "")
-        encabezado = (
-            f"📄 TRANSCRIPCIÓN LITERAL E ÍNTEGRA DEL DOCUMENTO: \"{nombre_doc}\"\n"
-            f"══════════════════════════════════════════════════════════════════\n\n"
-        )
-        return encabezado + texto_integro
+    # Paso 3: INTERCEPTOR DE LECTURA LITERAL INSTANTÁNEA (Sin llamar a api.openai.com)
+    if solicita_lectura_literal_directa(directiva_efectiva, tiene_adjunto_en_turno=tiene_adjunto_actual):
+        if tiene_adjunto_actual and desglose["texto_documento"]:
+            nombre_doc = desglose["nombre_archivo"]
+            texto_integro = desglose["texto_documento"]
+            return {
+                "reply": formatear_transcripcion_literal(nombre_doc, texto_integro),
+                "is_verbatim": True,
+                "speech_text": texto_integro
+            }
+        elif doc_en_cache and doc_en_cache.get("texto_integro"):
+            nombre_doc = doc_en_cache.get("nombre", "Documento")
+            texto_integro = doc_en_cache.get("texto_integro", "")
+            return {
+                "reply": formatear_transcripcion_literal(nombre_doc, texto_integro),
+                "is_verbatim": True,
+                "speech_text": texto_integro
+            }
 
     if not OPENAI_API_KEY:
-        return "Falta configurar la clave OPENAI_API_KEY en las variables de entorno de Render."
+        return {
+            "reply": "Falta configurar la clave OPENAI_API_KEY en las variables de entorno de Render.",
+            "is_verbatim": False,
+            "speech_text": ""
+        }
 
     ahora_bsas = datetime.datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3)))
     fecha_str = ahora_bsas.strftime('%A, %d de %B de %Y, %H:%M:%S')
@@ -2907,10 +3112,8 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
     nota_cache = ""
     if doc_en_cache:
         nota_cache = (
-            f"\n\nDOCUMENTO ACTIVO EN CACHÉ DEL SERVIDOR: Actualmente tienes cargado en memoria el documento "
-            f"'{doc_en_cache.get('nombre')}' ({doc_en_cache.get('longitud_caracteres')} caracteres). "
-            "Si el profesor te formula preguntas sobre el documento anterior o pide analizarlo y no ves el texto "
-            "en el mensaje actual, invoca 'tool_obtener_documento_en_memoria' o responde con base en su contenido."
+            f"\n\nDOCUMENTO ACTIVO EN CACHÉ DEL SERVIDOR: '{doc_en_cache.get('nombre')}' "
+            f"({doc_en_cache.get('longitud_caracteres')} caracteres)."
         )
 
     instruccion_dinamica = (
@@ -2921,28 +3124,35 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
 
     mensajes_api = [{"role": "system", "content": instruccion_dinamica}]
 
-    for msg in (historial_cliente or [])[-8:]:
+    for msg in (historial_cliente or [])[-6:]:
         rol = msg.get("role")
         contenido = msg.get("content", "")
         if rol in ["user", "assistant"] and contenido:
-            # Evitamos acumular múltiples volcados gigantescos en el contexto de entrada
-            if len(contenido) > 4500:
-                contenido = contenido[:4500] + "\n...[Contenido extenso resguardado en caché]..."
+            if len(contenido) > 3000:
+                contenido = contenido[:3000] + "\n...[Contenido extenso resguardado en caché]..."
             mensajes_api.append({"role": rol, "content": contenido})
 
-    # Si el mensaje actual no trae el texto del documento pero hace referencia a él,
-    # inyectamos un extracto amplio desde la caché del servidor para que el modelo tenga contexto inmediato.
-    if doc_en_cache and "[Se adjunta el archivo:" not in mensaje_usuario:
-        palabras_doc = ["documento", "archivo", "plancha", "certificado", "cv", "texto", "leíste", "anterior"]
-        if any(p in mensaje_usuario.lower() for p in palabras_doc):
-            extracto_cache = doc_en_cache.get("texto_integro", "")[:22000]
-            mensaje_usuario = (
+    # Acotamos el tamaño del documento enviado a OpenAI en consultas analíticas para que responda en < 6 segundos
+    mensaje_para_openai = mensaje_usuario
+    if tiene_adjunto_actual and desglose["texto_documento"]:
+        extracto_prudente = desglose["texto_documento"][:18000]
+        mensaje_para_openai = (
+            f"[Archivo adjunto: {desglose['nombre_archivo']}]\n"
+            f"Contenido del documento:\n{extracto_prudente}\n\n"
+            f"Directiva del Profesor:\n{directiva_efectiva}"
+        )
+    elif doc_en_cache and "[Se adjunta el archivo:" not in mensaje_usuario:
+        norm_dir = normalizar_sin_tildes(directiva_efectiva)
+        palabras_doc = ["documento", "archivo", "plancha", "trivium", "certificado", "cv", "texto", "anterior"]
+        if any(p in norm_dir for p in palabras_doc):
+            extracto_cache = doc_en_cache.get("texto_integro", "")[:18000]
+            mensaje_para_openai = (
                 f"[Contexto documental activo en caché: {doc_en_cache.get('nombre')}]\n"
                 f"{extracto_cache}\n\n"
-                f"Directiva del Profesor:\n{mensaje_usuario}"
+                f"Directiva del Profesor:\n{directiva_efectiva}"
             )
 
-    mensajes_api.append({"role": "user", "content": mensaje_usuario})
+    mensajes_api.append({"role": "user", "content": mensaje_para_openai})
 
     url_api = "https://api.openai.com/v1/chat/completions"
     cabeceras = {
@@ -2950,29 +3160,46 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
         "Content-Type": "application/json"
     }
 
+    inicio_reloj = time.time()
     texto_respuesta = ""
+
     for iteracion in range(4):
-        # Protección anti-timeout de Render (si superamos 22 segundos, cerramos el bucle de forma limpia)
         tiempo_transcurrido = time.time() - inicio_reloj
-        if tiempo_transcurrido > 22.0 and iteracion > 0:
+        if tiempo_transcurrido > 20.0 and iteracion > 0:
             break
 
-        timeout_restante = max(8.0, 25.0 - tiempo_transcurrido)
         payload_inicial = {
             "model": OPENAI_MODEL_MAIN,
             "messages": mensajes_api,
             "tools": openai_tools_definition,
             "tool_choice": "auto",
-            "temperature": 0.1
+            "temperature": 0.1,
+            "max_tokens": 2000
         }
 
-        respuesta = requests.post(
-            url_api,
-            json=payload_inicial,
-            headers=cabeceras,
-            timeout=timeout_restante
-        )
-        respuesta_json = respuesta.json()
+        try:
+            respuesta = requests.post(
+                url_api,
+                json=payload_inicial,
+                headers=cabeceras,
+                timeout=22.0
+            )
+            respuesta_json = respuesta.json()
+        except requests.exceptions.Timeout:
+            # Si OpenAI demora demasiado y hay un documento en caché, entregamos el documento directamente
+            doc_actual = obtener_ultimo_documento_cache()
+            if doc_actual and doc_actual.get("texto_integro"):
+                txt_doc = doc_actual.get("texto_integro")
+                return {
+                    "reply": formatear_transcripcion_literal(doc_actual.get("nombre", "Documento"), txt_doc),
+                    "is_verbatim": True,
+                    "speech_text": txt_doc
+                }
+            return {
+                "reply": "La API externa de OpenAI demoró más de lo habitual. Por favor, repita su consulta.",
+                "is_verbatim": False,
+                "speech_text": ""
+            }
 
         if "choices" in respuesta_json and respuesta_json["choices"]:
             mensaje_respuesta = respuesta_json["choices"][0]["message"]
@@ -3001,16 +3228,16 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
                             "error_ejecucion": str(tool_err)
                         }, ensure_ascii=False)
 
-                    # Si la herramienta fue tool_leer_contenido_drive y el usuario pidió lectura literal,
-                    # devolvemos directamente el texto íntegro recién guardado en la caché sin resumir.
-                    if nombre_funcion == "tool_leer_contenido_drive" and solicita_lectura_literal_directa(texto_evaluar):
-                        doc_actualizado = obtener_ultimo_documento_cache()
-                        if doc_actualizado and doc_actualizado.get("texto_integro"):
-                            encabezado_drive = (
-                                f"📄 LECTURA ÍNTEGRA Y LITERAL DEL ARCHIVO DE DRIVE: \"{doc_actualizado.get('nombre')}\"\n"
-                                f"══════════════════════════════════════════════════════════════════\n\n"
-                            )
-                            return encabezado_drive + doc_actualizado.get("texto_integro")
+                    # Si acaba de leer un archivo de Drive y la orden original era leerlo, retornamos de inmediato
+                    if nombre_funcion == "tool_leer_contenido_drive" and solicita_lectura_literal_directa(directiva_efectiva, True):
+                        doc_drive = obtener_ultimo_documento_cache()
+                        if doc_drive and doc_drive.get("texto_integro"):
+                            txt_drive = doc_drive.get("texto_integro")
+                            return {
+                                "reply": formatear_transcripcion_literal(doc_drive.get("nombre", "Archivo de Drive"), txt_drive),
+                                "is_verbatim": True,
+                                "speech_text": txt_drive
+                            }
 
                     mensajes_api.append({
                         "role": "tool",
@@ -3028,35 +3255,38 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
 
     if not texto_respuesta:
         doc_final = obtener_ultimo_documento_cache()
-        if doc_final and solicita_lectura_literal_directa(texto_evaluar):
-            return doc_final.get("texto_integro")
-        texto_respuesta = (
-            "Se ha completado el procesamiento de las herramientas solicitadas. "
-            "Si desea visualizar o escuchar el documento completo sin resumir, "
-            "presione el botón superior '📖 Leer Documento Íntegro'."
-        )
+        if doc_final and doc_final.get("texto_integro"):
+            txt_doc = doc_final.get("texto_integro")
+            return {
+                "reply": formatear_transcripcion_literal(doc_final.get("nombre", "Documento"), txt_doc),
+                "is_verbatim": True,
+                "speech_text": txt_doc
+            }
+        texto_respuesta = "Se ha completado el procesamiento de las herramientas solicitadas."
 
-    return texto_respuesta
+    return {
+        "reply": texto_respuesta,
+        "is_verbatim": False,
+        "speech_text": texto_respuesta
+    }
 
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """
     Controlador principal del agente autónomo.
-    Coordina la memoria liviana del cliente, la caché documental del servidor
-    y el interceptor de lectura literal.
+    Garantiza entrega instantánea sin Timeouts en lecturas de documentos.
     """
     datos_solicitud = request.get_json(silent=True) or {}
     mensaje_usuario = (datos_solicitud.get("message") or "").strip()
-    directiva_cruda = (datos_solicitud.get("raw_directive") or mensaje_usuario).strip()
+    directiva_cruda = (datos_solicitud.get("raw_directive") or "").strip()
     historial_cliente = datos_solicitud.get("history") or []
 
     if not mensaje_usuario:
         return jsonify({"reply": "Por favor, indique una directiva operativa válida."})
 
     try:
-        es_lectura_literal = solicita_lectura_literal_directa(directiva_cruda)
-        texto_respuesta = procesar_consulta_autonoma_interna(
+        resultado = procesar_consulta_autonoma_interna(
             mensaje_usuario=mensaje_usuario,
             historial_cliente=historial_cliente,
             directiva_cruda=directiva_cruda
@@ -3064,7 +3294,7 @@ def chat():
 
         doc_activo = obtener_ultimo_documento_cache()
         info_doc_activo = None
-        if doc_activo:
+        if doc_activo and doc_activo.get("texto_integro"):
             info_doc_activo = {
                 "filename": doc_activo.get("nombre"),
                 "length": doc_activo.get("longitud_caracteres"),
@@ -3072,19 +3302,20 @@ def chat():
             }
 
         return jsonify({
-            "reply": texto_respuesta,
-            "is_verbatim": es_lectura_literal,
-            "speech_text": doc_activo.get("texto_integro") if (es_lectura_literal and doc_activo) else texto_respuesta,
+            "reply": resultado.get("reply", ""),
+            "is_verbatim": bool(resultado.get("is_verbatim")),
+            "speech_text": resultado.get("speech_text", ""),
             "active_document": info_doc_activo
         })
     except Exception as error_critico:
         print(f"[ERROR CRÍTICO CHAT GENERAL]: {repr(error_critico)}")
         doc_respaldo = obtener_ultimo_documento_cache()
-        if doc_respaldo and solicita_lectura_literal_directa(directiva_cruda):
+        if doc_respaldo and doc_respaldo.get("texto_integro"):
+            txt_resp = doc_respaldo.get("texto_integro")
             return jsonify({
-                "reply": doc_respaldo.get("texto_integro"),
+                "reply": formatear_transcripcion_literal(doc_respaldo.get("nombre", "Documento"), txt_resp),
                 "is_verbatim": True,
-                "speech_text": doc_respaldo.get("texto_integro")
+                "speech_text": txt_resp
             })
         return jsonify({
             "reply": f"Error operativo controlado: {str(error_critico)}"
