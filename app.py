@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
- NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL (v5.0)
- Arquitectura Anti-Timeout, Lectura Literal Instantánea Sin Latencia OpenAI,
- Caché Inter-Worker en Disco (/tmp), OCR Universal y Secuenciador de Voz.
+ NÚCLEO CENTRAL DE THIAGO - AGENTE AUTÓNOMO BIDIRECCIONAL INTEGRAL (v6.0)
+ Arquitectura Anti-Timeout, Blindaje OAuth2 y RFC3339 para Google Calendar,
+ Lectura Literal Instantánea Sin Latencia OpenAI, Caché Inter-Worker en /tmp,
+ OCR Universal Multicapa y Secuenciador de Voz de Larga Duración.
  Desarrollado exclusivamente para el Prof. David Villarreal
  Abogado, Babalawo de Ifá tradicional yoruba, Batuque Isesa, profesor de inglés,
  magíster en relaciones internacionales, masón y doctorando.
@@ -46,9 +47,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL_MAIN = os.getenv("OPENAI_MODEL_MAIN", "gpt-4o-mini").strip()
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "").strip()
 
+# Huso horario oficial de Buenos Aires (UTC-3)
+TZ_BUENOS_AIRES = timezone(timedelta(hours=-3))
+
 # Ruta en el sistema de archivos temporal de Linux (/tmp) compartida por todos
 # los workers de Gunicorn en Render para evitar pérdidas de contexto documental.
-CACHE_FILE_PATH = "/tmp/thiago_document_cache_v5.json"
+CACHE_FILE_PATH = "/tmp/thiago_document_cache_v6.json"
 
 DOCUMENT_CACHE = {
     "ultimo_documento": {
@@ -239,11 +243,21 @@ def desglosar_payload_con_adjunto(mensaje_usuario):
     }
 
 
+# Vocabulario exclusivo de herramientas (Calendar, Gmail, WhatsApp, Web) que NUNCA
+# debe ser interceptado como lectura literal de un documento adjunto.
+TERMINOS_EXCLUIDOS_LECTURA_DOCUMENTAL = [
+    "agenda", "calendario", "evento", "eventos", "turno", "turnos", "cita", "citas",
+    "compromiso", "compromisos", "reunion", "reuniones", "horario", "horarios",
+    "correo", "correos", "mail", "mails", "email", "emails", "gmail", "bandeja",
+    "whatsapp", "mensaje", "mensajes", "twilio", "jurisprudencia", "fallo", "fallos",
+    "internet", "web", "googlea", "busca en la web", "carpeta", "carpetas"
+]
+
 PATRONES_LECTURA_LITERAL_SIN_TILDES = [
     r"no\s+quiero\s+(un\s+|ningun\s+)?resumen",
     r"sin\s+resumir",
-    r"quiero\s+que\s+(me\s+)?leas",
-    r"lee(me|lo|la)?\s+(este|el|ese|todo\s+el|el\s+contenido\s+del)?\s*(archivo|documento|texto|pdf|plancha|certificado|cv|curriculum|fallo|escrito)",
+    r"quiero\s+que\s+(me\s+)?leas\s+(este|el|ese|todo\s+el)?\s*(archivo|documento|texto|pdf|plancha|certificado|cv|curriculum|escrito)",
+    r"lee(me|lo|la)?\s+(este|el|ese|todo\s+el|el\s+contenido\s+del)\s+(archivo|documento|texto|pdf|plancha|certificado|cv|curriculum|escrito)",
     r"^lee(me|lo|la)?(\s+por\s+favor|\s+completo|\s+integro|\s+entero|\s+ahora|\s+si)?\.?$",
     r"^leer(\s+archivo|\s+documento|\s+completo|\s+integro|\s+todo)?\.?$",
     r"lee(me)?\s+el\s+(documento|archivo|texto)\s+anterior",
@@ -256,18 +270,27 @@ PATRONES_LECTURA_LITERAL_SIN_TILDES = [
 def solicita_lectura_literal_directa(directiva_usuario, tiene_adjunto_en_turno=False):
     """
     Evalúa con precisión quirúrgica (e ignorando tildes) si el profesor está
-    solicitando leer/transcribir el documento en lugar de resumirlo.
+    solicitando leer/transcribir el documento en lugar de resumirlo, garantizando
+    que órdenes sobre su agenda o sus correos jamás se confundan con un documento.
     """
     if not directiva_usuario:
         return bool(tiene_adjunto_en_turno)
 
-    # Extraemos solo la directiva si aún viene con la cabecera del payload
     if "Directiva del Profesor:" in directiva_usuario:
         directiva_usuario = directiva_usuario.rsplit("Directiva del Profesor:", 1)[-1]
 
     limpio = normalizar_sin_tildes(directiva_usuario)
+    # Removemos el vocativo inicial "thiago" si el profesor encabeza la frase con su nombre
+    limpio = re.sub(r"^thiago[\s,:;-]*", "", limpio).strip()
+
     if not limpio:
         return bool(tiene_adjunto_en_turno)
+
+    # Exclusión estricta: si pide leer la agenda, el calendario o los correos, NO es lectura de archivo
+    if not tiene_adjunto_en_turno:
+        for termino in TERMINOS_EXCLUIDOS_LECTURA_DOCUMENTAL:
+            if re.search(rf"\b{termino}\b", limpio):
+                return False
 
     # Si explícitamente rechaza el resumen, siempre es lectura literal
     if "no quiero un resumen" in limpio or "no quiero resumen" in limpio or "sin resumir" in limpio:
@@ -280,15 +303,12 @@ def solicita_lectura_literal_directa(directiva_usuario, tiene_adjunto_en_turno=F
         "traduce", "traduci", "corrige", "corregi", "cuales son", "que significa"
     ]
     if any(p in limpio for p in palabras_analisis):
-        # Excepción: "Analiza el documento adjunto." es el texto por defecto cuando no escribe nada,
-        # pero si escribió "leeme", entra por los patrones inferiores.
         return False
 
     for patron in PATRONES_LECTURA_LITERAL_SIN_TILDES:
         if re.search(patron, limpio):
             return True
 
-    # Si adjuntó un archivo en este mismo mensaje y la orden empieza con "lee" o "leeme"
     if tiene_adjunto_en_turno and (limpio.startswith("lee") or limpio.startswith("leer")):
         return True
 
@@ -296,7 +316,7 @@ def solicita_lectura_literal_directa(directiva_usuario, tiene_adjunto_en_turno=F
 
 
 # =============================================================================
-# SECCIÓN 3: INSTRUCCIÓN DE SISTEMA (SYSTEM PROMPT) DE ALTA VELOCIDAD
+# SECCIÓN 3: INSTRUCCIÓN DE SISTEMA (SYSTEM PROMPT) DE ALTA PRECISIÓN
 # =============================================================================
 SYSTEM_INSTRUCTION = (
     "Eres Thiago, el núcleo de inteligencia artificial autónoma del Prof. David Villarreal "
@@ -322,10 +342,13 @@ SYSTEM_INSTRUCTION = (
     "los archivos que contengan sus iniciales ('DEV', por ejemplo 'CV DEV.doc') o su nombre ('David Villarreal'), "
     "descartando currículums de terceras personas. "
     "\n\n"
-    "REGLA CRÍTICA DE CALENDARIO Y EJECUCIÓN AUTÓNOMA: "
-    "Al crear eventos, valida que no existan duplicados. Si el profesor solicita agendar, enviar un correo, "
-    "crear un documento en Drive o despachar un WhatsApp por Twilio, ejecuta la herramienta correspondiente "
-    "de inmediato y sin pedirle jamás que realice pasos manuales."
+    "REGLA CRÍTICA DE AGENDA Y GOOGLE CALENDAR (PRIORIDAD MÁXIMA): "
+    "Tienes acceso total y operativo a Google Calendar mediante 'tool_consultar_calendario', 'tool_crear_evento_calendario', "
+    "'tool_actualizar_evento_calendario' y 'tool_eliminar_evento_calendario'. "
+    "Cuando el profesor solicite consultar su agenda de hoy, de mañana o de la semana, invoca siempre 'tool_consultar_calendario'. "
+    "Si pregunta por la agenda de 'hoy', pasa en 'time_min' el inicio del día actual en Buenos Aires (00:00:00-03:00) y en "
+    "'time_max' el final del día actual (23:59:59-03:00) para listar absolutamente todas las actividades de la jornada. "
+    "ESTÁ TERMINANTEMENTE PROHIBIDO pedirle al profesor que revise su calendario manualmente."
 )
 
 
@@ -338,7 +361,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Núcleo Central de Thiago v5.0 - Agente Autónomo Bidireccional</title>
+    <title>Núcleo Central de Thiago v6.0 - Agente Autónomo Bidireccional</title>
     <style>
         :root {
             --bg-primary: #0f172a;
@@ -657,8 +680,8 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <div class="header-top">
-            <h1>Núcleo Central de Thiago v5.0</h1>
-            <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional y Lector Documental Instantáneo</div>
+            <h1>Núcleo Central de Thiago v6.0</h1>
+            <div class="subtitle">Prof. David Villarreal — Agente Autónomo Bidireccional, Agenda Activa y Lector Instantáneo</div>
         </div>
 
         <div class="status-toolbar">
@@ -753,7 +776,7 @@ HTML_TEMPLATE = """
 
         function renderizarHistorial() {
             const chatBox = document.getElementById('chatBox');
-            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral v5.0 en línea. Módulos operativos, lectura literal instantánea (sin Timeouts) y secuenciador de voz activos. ¿Qué directiva procesamos?</div>';
+            chatBox.innerHTML = '<div class="message ai-msg">Núcleo integral v6.0 en línea. Google Calendar, Gmail, Drive, lectura literal instantánea y memoria persistente activos. ¿Qué directiva procesamos?</div>';
 
             memoriaLocal.forEach(msg => {
                 if (msg.role === 'user') {
@@ -931,7 +954,6 @@ HTML_TEMPLATE = """
 
         async function mostrarYLeerDocumentoIntegro() {
             const docTexto = archivoAdjuntoTexto || ultimoDocumentoTexto;
-            const docNombre = archivoAdjuntoNombre || ultimoDocumentoNombre;
 
             if (!docTexto) {
                 try {
@@ -1013,10 +1035,23 @@ HTML_TEMPLATE = """
             return "OTRO";
         }
 
-        // Detector insensible a tildes en el cliente para órdenes de lectura literal
+        // Detector insensible a tildes en el cliente para órdenes de lectura literal de documentos
         function esOrdenDeLecturaLiteralCliente(textoUsuario, hayAdjuntoReciente) {
-            const t = quitarTildesJS(textoUsuario).replace(/[.!?]/g, "").trim();
+            let t = quitarTildesJS(textoUsuario).replace(/[.!?]/g, "").trim();
+            t = t.replace(/^thiago[\s,:;-]*/, "").trim();
+
             if (!t) return Boolean(hayAdjuntoReciente);
+
+            // Si menciona agenda, calendario, eventos, correos o whatsapp, NUNCA interceptar como documento
+            const palabrasExcluidas = [
+                "agenda", "calendario", "evento", "eventos", "turno", "turnos", "cita", "citas",
+                "compromiso", "compromisos", "reunion", "reuniones", "horario", "horarios",
+                "correo", "correos", "mail", "mails", "email", "emails", "gmail", "bandeja",
+                "whatsapp", "twilio", "jurisprudencia", "fallo", "fallos", "internet", "web", "carpeta"
+            ];
+            if (!hayAdjuntoReciente && palabrasExcluidas.some(p => new RegExp("\\b" + p + "\\b").test(t))) {
+                return false;
+            }
 
             if (t.includes("no quiero un resumen") || t.includes("no quiero resumen") || t.includes("sin resumir")) {
                 return true;
@@ -1025,15 +1060,19 @@ HTML_TEMPLATE = """
                 return true;
             }
 
-            // Si el usuario pide explícitamente resumir o analizar, no forzamos lectura literal
             const pideAnalisis = ["resumi", "resumen", "sintetiza", "explica", "analiza", "puntos clave", "opina", "compara"];
             if (pideAnalisis.some(p => t.includes(p))) {
                 return false;
             }
 
-            const regexLectura = /^(lee(me|lo|la)?|leer|mostra(me)?|transcrib(i|e|ir))\b/;
-            if (regexLectura.test(t)) {
-                return true;
+            if (hayAdjuntoReciente) {
+                const regexConAdjunto = /^(lee(me|lo|la)?|leer|mostra(me)?|transcrib(i|e|ir))\b/;
+                if (regexConAdjunto.test(t)) return true;
+            } else {
+                const regexSinAdjunto = /^(lee(me|lo|la)?|leer|mostra(me)?|transcrib(i|e|ir))\s+(este|el|ese|todo\s+el)\s+(archivo|documento|texto|pdf|plancha|certificado|cv|curriculum|escrito)\b/;
+                if (regexSinAdjunto.test(t) || t === "leelo" || t === "leeme el documento" || t === "lee el documento anterior") {
+                    return true;
+                }
             }
 
             return false;
@@ -1165,7 +1204,7 @@ HTML_TEMPLATE = """
             mostrarBannerConfirmacion(true);
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                const pregunta = new SpeechSynthesisUtterance("Profesor, el texto está en pantalla. ¿Desea que se lo lea?");
+                const pregunta = new SpeechSynthesisUtterance("Profesor, la respuesta está en pantalla. ¿Desea que se la lea?");
                 pregunta.lang = 'es-AR';
                 pregunta.rate = 1.0;
 
@@ -1239,7 +1278,7 @@ HTML_TEMPLATE = """
             esperandoConfirmacionDeVoz = false;
             mostrarBannerConfirmacion(false);
 
-            // 2. INTERCEPTOR INSTANTÁNEO EN EL NAVEGADOR PARA LECTURA LITERAL ("Léeme este archivo")
+            // 2. INTERCEPTOR INSTANTÁNEO EN EL NAVEGADOR PARA LECTURA LITERAL DE DOCUMENTOS
             const hayDocumentoDisponible = (archivoAdjuntoTexto !== "" || ultimoDocumentoTexto !== "");
             if (hayDocumentoDisponible && esOrdenDeLecturaLiteralCliente(texto, archivoAdjuntoTexto !== "")) {
                 const nombreDoc = archivoAdjuntoNombre || ultimoDocumentoNombre;
@@ -1360,13 +1399,8 @@ HTML_TEMPLATE = """
             } catch (error) {
                 const nodoCarga = document.getElementById(idCarga);
                 if (nodoCarga) nodoCarga.remove();
-
-                if (ultimoDocumentoTexto) {
-                    mostrarYLeerDocumentoIntegro();
-                } else {
-                    chatBox.innerHTML += `<div class="message ai-msg error-text">⚠️ Aviso operativo: ${escaparHTML(error.message)}.</div>`;
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                }
+                chatBox.innerHTML += `<div class="message ai-msg error-text">⚠️ Aviso operativo: ${escaparHTML(error.message)}.</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
             }
         }
 
@@ -1380,34 +1414,49 @@ HTML_TEMPLATE = """
 
 
 # =============================================================================
-# SECCIÓN 5: GESTIÓN DE CREDENCIALES OAUTH2 Y CONECTIVIDAD GOOGLE WORKSPACE
+# SECCIÓN 5: GESTIÓN BLINDADA DE CREDENCIALES OAUTH2 Y GOOGLE WORKSPACE
 # =============================================================================
 def obtener_credenciales():
     """
-    Construye y refresca las credenciales OAuth2 aplicando sanitización estricta
-    de comillas y espacios en blanco en las variables de entorno de Render.
+    Construye y refresca las credenciales OAuth2 respetando de manera exacta
+    los cuatro permisos originales del token del Prof. David Villarreal.
+    Incluye autorrecuperación con scopes=None en caso de cualquier discrepancia
+    de alcance en el servidor OAuth2 de Google.
     """
     r_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip().strip('"\'')
     c_id = os.getenv("GOOGLE_CLIENT_ID", "").strip().strip('"\'')
     c_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip().strip('"\'')
 
-    credenciales = Credentials(
-        token=None,
-        refresh_token=r_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=c_id,
-        client_secret=c_secret,
-        scopes=[
-            'https://www.googleapis.com/auth/gmail.readonly',
-            'https://www.googleapis.com/auth/gmail.send',
-            'https://www.googleapis.com/auth/gmail.compose',
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/drive'
-        ]
-    )
-    if not credenciales.valid:
-        credenciales.refresh(Request())
-    return credenciales
+    scopes_originales = [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/drive'
+    ]
+
+    try:
+        credenciales = Credentials(
+            token=None,
+            refresh_token=r_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=c_id,
+            client_secret=c_secret,
+            scopes=scopes_originales
+        )
+        if not credenciales.valid:
+            credenciales.refresh(Request())
+        return credenciales
+    except Exception as err_scope:
+        print(f"[AVISO OAUTH2 - ACTIVANDO REFRESCO HEREDADO SIN SCOPES FORZADOS]: {repr(err_scope)}")
+        credenciales_heredadas = Credentials(
+            token=None,
+            refresh_token=r_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=c_id,
+            client_secret=c_secret
+        )
+        credenciales_heredadas.refresh(Request())
+        return credenciales_heredadas
 
 
 def construir_servicio_google(nombre_api, version_api):
@@ -1986,7 +2035,7 @@ def verificar_salud_servidor():
     doc = obtener_ultimo_documento_cache()
     return jsonify({
         "status": "online",
-        "agent": "Thiago v5.0",
+        "agent": "Thiago v6.0",
         "openai_configured": bool(OPENAI_API_KEY),
         "cached_document": doc.get("nombre") if doc else None
     })
@@ -2097,49 +2146,94 @@ def tool_enviar_correo(destinatario, asunto, cuerpo):
         return json.dumps({"error_tecnico_gmail_envio": str(error)}, ensure_ascii=False)
 
 
-def tool_crear_borrador_correo(destinatario, asunto, cuerpo):
-    """Crea un borrador de correo electrónico en Gmail."""
-    try:
-        servicio = construir_servicio_google('gmail', 'v1')
-        mensaje = MIMEText(cuerpo, 'plain', 'utf-8')
-        mensaje['to'] = destinatario.strip()
-        mensaje['subject'] = asunto.strip()
-        raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')
-
-        borrador = servicio.users().drafts().create(
-            userId='me',
-            body={'message': {'raw': raw_message}}
-        ).execute()
-        return json.dumps({
-            "resultado": "Borrador creado exitosamente en Gmail.",
-            "id_borrador": borrador.get('id')
-        }, ensure_ascii=False)
-    except Exception as error:
-        print(f"[ERROR CRÍTICO GMAIL BORRADOR]: {repr(error)}")
-        return json.dumps({"error_tecnico_gmail_borrador": str(error)}, ensure_ascii=False)
-
-
 # =============================================================================
-# SECCIÓN 9: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE CALENDAR
+# SECCIÓN 9: SUITE DE HERRAMIENTAS AUTÓNOMAS DE GOOGLE CALENDAR (BLINDADA RFC3339)
 # =============================================================================
-def tool_consultar_calendario(time_min=None, max_results=50):
-    """Consulta los próximos eventos y compromisos agendados en Google Calendar."""
+def normalizar_fecha_rfc3339_bsas(valor_fecha, es_fin_de_dia=False):
+    """
+    Convierte cualquier cadena de fecha u hora enviada por el modelo
+    ('2026-11-06', '2026-11-06 09:00:00', '2026-11-06T09:00:00', 'hoy', 'mañana')
+    en una cadena estricta RFC 3339 con el desplazamiento de Buenos Aires (-03:00),
+    evitando errores HttpError 400 (Bad Request) en la API de Google Calendar.
+    """
+    ahora_bsas = datetime.datetime.now(timezone.utc).astimezone(TZ_BUENOS_AIRES)
+
+    if not valor_fecha or not str(valor_fecha).strip():
+        if es_fin_de_dia:
+            cierre = ahora_bsas.replace(hour=23, minute=59, second=59, microsecond=0)
+            return cierre.isoformat()
+        inicio = ahora_bsas.replace(hour=0, minute=0, second=0, microsecond=0)
+        return inicio.isoformat()
+
+    limpio = normalizar_sin_tildes(str(valor_fecha))
+
+    if limpio in ["hoy", "today", "ahora", "now"]:
+        dt_base = ahora_bsas
+        if es_fin_de_dia:
+            return dt_base.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+        return dt_base.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    if limpio in ["manana", "tomorrow"]:
+        dt_base = ahora_bsas + timedelta(days=1)
+        if es_fin_de_dia:
+            return dt_base.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+        return dt_base.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    cadena = str(valor_fecha).strip().replace(" ", "T")
+
+    # Caso 1: Solo fecha YYYY-MM-DD
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", cadena):
+        sufijo_hora = "T23:59:59-03:00" if es_fin_de_dia else "T00:00:00-03:00"
+        return cadena + sufijo_hora
+
+    # Caso 2: Fecha y hora sin segundos YYYY-MM-DDTHH:MM
+    if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$", cadena):
+        return cadena + ":00-03:00"
+
+    # Caso 3: Fecha y hora sin zona horaria YYYY-MM-DDTHH:MM:SS (con o sin milisegundos)
+    if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$", cadena):
+        return cadena + "-03:00"
+
+    # Caso 4: Ya posee 'Z' o desplazamiento '+/-HH:MM'
+    if cadena.endswith("Z") or re.search(r"[+-]\d{2}:\d{2}$", cadena):
+        return cadena
+
+    # Respaldo seguro: inicio del día actual en Buenos Aires
+    return ahora_bsas.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+
+def tool_consultar_calendario(time_min=None, time_max=None, max_results=50):
+    """
+    Consulta los eventos y compromisos agendados en Google Calendar.
+    Sanea automáticamente los parámetros time_min y time_max al estándar RFC 3339
+    de Buenos Aires (-03:00) para garantizar un funcionamiento libre de fallos.
+    """
     try:
         servicio = construir_servicio_google('calendar', 'v3')
-        ahora = time_min or datetime.datetime.now(timezone.utc).isoformat()
+        time_min_rfc = normalizar_fecha_rfc3339_bsas(time_min, es_fin_de_dia=False)
         limite = min(max(int(max_results or 50), 1), 100)
 
-        respuesta_eventos = servicio.events().list(
-            calendarId='primary',
-            timeMin=ahora,
-            maxResults=limite,
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
+        parametros = {
+            'calendarId': 'primary',
+            'timeMin': time_min_rfc,
+            'maxResults': limite,
+            'singleEvents': True,
+            'orderBy': 'startTime',
+            'timeZone': 'America/Argentina/Buenos_Aires'
+        }
+
+        if time_max and str(time_max).strip():
+            time_max_rfc = normalizar_fecha_rfc3339_bsas(time_max, es_fin_de_dia=True)
+            if time_max_rfc > time_min_rfc:
+                parametros['timeMax'] = time_max_rfc
+
+        respuesta_eventos = servicio.events().list(**parametros).execute()
         eventos = respuesta_eventos.get('items', [])
         if not eventos:
             return json.dumps({
-                "resultado": "No hay eventos próximos registrados en la agenda."
+                "resultado": "No hay eventos registrados en Google Calendar para el período consultado.",
+                "desde": time_min_rfc,
+                "hasta": parametros.get("timeMax", "en adelante")
             }, ensure_ascii=False)
 
         lista_eventos = []
@@ -2172,33 +2266,38 @@ def tool_crear_evento_calendario(summary, start_time, end_time, location="", des
     """
     try:
         servicio = construir_servicio_google('calendar', 'v3')
+        inicio_rfc = normalizar_fecha_rfc3339_bsas(start_time, es_fin_de_dia=False)
+        fin_rfc = normalizar_fecha_rfc3339_bsas(end_time, es_fin_de_dia=False)
 
-        existentes = servicio.events().list(
-            calendarId='primary',
-            timeMin=start_time,
-            timeMax=end_time,
-            q=summary,
-            singleEvents=True
-        ).execute().get('items', [])
+        try:
+            existentes = servicio.events().list(
+                calendarId='primary',
+                timeMin=inicio_rfc,
+                timeMax=fin_rfc,
+                q=summary,
+                singleEvents=True
+            ).execute().get('items', [])
 
-        for ev in existentes:
-            if ev.get('summary', '').strip().lower() == summary.strip().lower():
-                return json.dumps({
-                    "resultado": "El evento ya existe en el calendario en ese horario. Se ha bloqueado la duplicación.",
-                    "id": ev.get('id'),
-                    "link": ev.get('htmlLink')
-                }, ensure_ascii=False)
+            for ev in existentes:
+                if ev.get('summary', '').strip().lower() == summary.strip().lower():
+                    return json.dumps({
+                        "resultado": "El evento ya existe en el calendario en ese horario. Se ha bloqueado la duplicación.",
+                        "id": ev.get('id'),
+                        "link": ev.get('htmlLink')
+                    }, ensure_ascii=False)
+        except Exception as err_dup:
+            print(f"[AVISO VERIFICACIÓN DUPLICADOS CALENDAR]: {repr(err_dup)}")
 
         evento = {
             'summary': summary,
             'location': location,
             'description': description,
             'start': {
-                'dateTime': start_time,
+                'dateTime': inicio_rfc,
                 'timeZone': 'America/Argentina/Buenos_Aires'
             },
             'end': {
-                'dateTime': end_time,
+                'dateTime': fin_rfc,
                 'timeZone': 'America/Argentina/Buenos_Aires'
             },
         }
@@ -2239,12 +2338,12 @@ def tool_actualizar_evento_calendario(event_id, summary=None, start_time=None, e
             evento_actual['description'] = description
         if start_time is not None:
             evento_actual['start'] = {
-                'dateTime': start_time,
+                'dateTime': normalizar_fecha_rfc3339_bsas(start_time, es_fin_de_dia=False),
                 'timeZone': 'America/Argentina/Buenos_Aires'
             }
         if end_time is not None:
             evento_actual['end'] = {
-                'dateTime': end_time,
+                'dateTime': normalizar_fecha_rfc3339_bsas(end_time, es_fin_de_dia=False),
                 'timeZone': 'America/Argentina/Buenos_Aires'
             }
 
@@ -2718,12 +2817,11 @@ def tool_obtener_documento_en_memoria():
 
 
 # =============================================================================
-# SECCIÓN 12: MAPEO DE HERRAMIENTAS Y CLIENTE OPENAI RESILIENTE
+# SECCIÓN 12: MAPEO DE HERRAMIENTAS Y DEFINICIÓN DE FUNCIONES PARA OPENAI
 # =============================================================================
 available_tools = {
     "tool_listar_correos": tool_listar_correos,
     "tool_enviar_correo": tool_enviar_correo,
-    "tool_crear_borrador_correo": tool_crear_borrador_correo,
     "tool_consultar_calendario": tool_consultar_calendario,
     "tool_crear_evento_calendario": tool_crear_evento_calendario,
     "tool_actualizar_evento_calendario": tool_actualizar_evento_calendario,
@@ -2789,30 +2887,18 @@ openai_tools_definition = [
     {
         "type": "function",
         "function": {
-            "name": "tool_crear_borrador_correo",
-            "description": "Guarda un borrador de correo electrónico en Gmail.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "destinatario": {"type": "string", "description": "Correo del destinatario."},
-                    "asunto": {"type": "string", "description": "Asunto del borrador."},
-                    "cuerpo": {"type": "string", "description": "Cuerpo del mensaje."}
-                },
-                "required": ["destinatario", "asunto", "cuerpo"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "tool_consultar_calendario",
-            "description": "Consulta los próximos eventos y citas registrados en Google Calendar.",
+            "description": "Consulta los eventos y citas registrados en Google Calendar del Prof. David Villarreal.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "time_min": {
                         "type": "string",
-                        "description": "Fecha y hora mínima en formato ISO 8601."
+                        "description": "Fecha/hora de inicio en formato ISO 8601 (ej. '2026-11-06T00:00:00-03:00' o 'hoy')."
+                    },
+                    "time_max": {
+                        "type": "string",
+                        "description": "Fecha/hora límite opcional en formato ISO 8601 (ej. '2026-11-06T23:59:59-03:00')."
                     },
                     "max_results": {
                         "type": "integer",
@@ -3068,19 +3154,17 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
     """
     Ejecuta el ciclo operativo de Thiago:
     1. Desglosa cualquier archivo adjunto presente en el payload y sincroniza la caché en /tmp.
-    2. Si el profesor solicita leer el documento ("Léeme este archivo", "Léelo", "No quiero un resumen"),
+    2. Si el profesor solicita leer un documento adjunto ("Léeme este archivo", "No quiero un resumen"),
        entrega el texto íntegro de forma directa en < 0.01 segundos SIN llamar a OpenAI (0 Timeouts).
-    3. Para consultas analíticas o de herramientas, invoca a OpenAI con límite de tokens y protección anti-timeout.
+    3. Para consultas sobre Agenda, Gmail, Drive o Análisis, invoca las herramientas con protección RFC3339 y OAuth2.
     """
-    # Paso 1: Extraer documento si viene en el payload del mensaje actual
     desglose = desglosar_payload_con_adjunto(mensaje_usuario)
     tiene_adjunto_actual = desglose["tiene_adjunto"]
     directiva_efectiva = (directiva_cruda or desglose["directiva_limpia"] or "").strip()
 
-    # Paso 2: Obtener documento activo (del payload recién recibido o de la caché RAM / disco /tmp)
     doc_en_cache = obtener_ultimo_documento_cache()
 
-    # Paso 3: INTERCEPTOR DE LECTURA LITERAL INSTANTÁNEA (Sin llamar a api.openai.com)
+    # INTERCEPTOR DE LECTURA LITERAL INSTANTÁNEA (Excluye agenda/calendario/correos)
     if solicita_lectura_literal_directa(directiva_efectiva, tiene_adjunto_en_turno=tiene_adjunto_actual):
         if tiene_adjunto_actual and desglose["texto_documento"]:
             nombre_doc = desglose["nombre_archivo"]
@@ -3106,8 +3190,10 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
             "speech_text": ""
         }
 
-    ahora_bsas = datetime.datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3)))
+    ahora_bsas = datetime.datetime.now(timezone.utc).astimezone(TZ_BUENOS_AIRES)
     fecha_str = ahora_bsas.strftime('%A, %d de %B de %Y, %H:%M:%S')
+    inicio_hoy_iso = ahora_bsas.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    fin_hoy_iso = ahora_bsas.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
 
     nota_cache = ""
     if doc_en_cache:
@@ -3118,21 +3204,25 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
 
     instruccion_dinamica = (
         SYSTEM_INSTRUCTION
-        + f"\n\nINFORMACIÓN TEMPORAL OBLIGATORIA: Hoy es {fecha_str} (Hora oficial de Buenos Aires, Argentina)."
+        + f"\n\nINFORMACIÓN TEMPORAL OBLIGATORIA: Hoy es {fecha_str} (Hora oficial de Buenos Aires, Argentina). "
+        + f"El inicio del día de hoy es '{inicio_hoy_iso}' y el fin del día de hoy es '{fin_hoy_iso}'."
         + nota_cache
     )
 
     mensajes_api = [{"role": "system", "content": instruccion_dinamica}]
 
+    # Filtramos del historial antiguo cualquier falso mensaje de error de agenda previo para que el modelo
+    # no repita por inercia que no tiene acceso al calendario.
     for msg in (historial_cliente or [])[-6:]:
         rol = msg.get("role")
         contenido = msg.get("content", "")
         if rol in ["user", "assistant"] and contenido:
+            if rol == "assistant" and ("no he podido acceder a la agenda" in contenido.lower() or "error técnico al intentar acceder a tu agenda" in contenido.lower()):
+                continue
             if len(contenido) > 3000:
                 contenido = contenido[:3000] + "\n...[Contenido extenso resguardado en caché]..."
             mensajes_api.append({"role": rol, "content": contenido})
 
-    # Acotamos el tamaño del documento enviado a OpenAI en consultas analíticas para que responda en < 6 segundos
     mensaje_para_openai = mensaje_usuario
     if tiene_adjunto_actual and desglose["texto_documento"]:
         extracto_prudente = desglose["texto_documento"][:18000]
@@ -3144,7 +3234,7 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
     elif doc_en_cache and "[Se adjunta el archivo:" not in mensaje_usuario:
         norm_dir = normalizar_sin_tildes(directiva_efectiva)
         palabras_doc = ["documento", "archivo", "plancha", "trivium", "certificado", "cv", "texto", "anterior"]
-        if any(p in norm_dir for p in palabras_doc):
+        if any(p in norm_dir for p in palabras_doc) and not any(ex in norm_dir for ex in TERMINOS_EXCLUIDOS_LECTURA_DOCUMENTAL):
             extracto_cache = doc_en_cache.get("texto_integro", "")[:18000]
             mensaje_para_openai = (
                 f"[Contexto documental activo en caché: {doc_en_cache.get('nombre')}]\n"
@@ -3186,9 +3276,8 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
             )
             respuesta_json = respuesta.json()
         except requests.exceptions.Timeout:
-            # Si OpenAI demora demasiado y hay un documento en caché, entregamos el documento directamente
             doc_actual = obtener_ultimo_documento_cache()
-            if doc_actual and doc_actual.get("texto_integro"):
+            if doc_actual and doc_actual.get("texto_integro") and solicita_lectura_literal_directa(directiva_efectiva, tiene_adjunto_actual):
                 txt_doc = doc_actual.get("texto_integro")
                 return {
                     "reply": formatear_transcripcion_literal(doc_actual.get("nombre", "Documento"), txt_doc),
@@ -3228,7 +3317,6 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
                             "error_ejecucion": str(tool_err)
                         }, ensure_ascii=False)
 
-                    # Si acaba de leer un archivo de Drive y la orden original era leerlo, retornamos de inmediato
                     if nombre_funcion == "tool_leer_contenido_drive" and solicita_lectura_literal_directa(directiva_efectiva, True):
                         doc_drive = obtener_ultimo_documento_cache()
                         if doc_drive and doc_drive.get("texto_integro"):
@@ -3254,14 +3342,6 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
             break
 
     if not texto_respuesta:
-        doc_final = obtener_ultimo_documento_cache()
-        if doc_final and doc_final.get("texto_integro"):
-            txt_doc = doc_final.get("texto_integro")
-            return {
-                "reply": formatear_transcripcion_literal(doc_final.get("nombre", "Documento"), txt_doc),
-                "is_verbatim": True,
-                "speech_text": txt_doc
-            }
         texto_respuesta = "Se ha completado el procesamiento de las herramientas solicitadas."
 
     return {
@@ -3275,7 +3355,8 @@ def procesar_consulta_autonoma_interna(mensaje_usuario, historial_cliente, direc
 def chat():
     """
     Controlador principal del agente autónomo.
-    Garantiza entrega instantánea sin Timeouts en lecturas de documentos.
+    Garantiza entrega instantánea sin Timeouts en lecturas de documentos
+    y conectividad blindada con Google Calendar, Gmail y Drive.
     """
     datos_solicitud = request.get_json(silent=True) or {}
     mensaje_usuario = (datos_solicitud.get("message") or "").strip()
@@ -3309,14 +3390,6 @@ def chat():
         })
     except Exception as error_critico:
         print(f"[ERROR CRÍTICO CHAT GENERAL]: {repr(error_critico)}")
-        doc_respaldo = obtener_ultimo_documento_cache()
-        if doc_respaldo and doc_respaldo.get("texto_integro"):
-            txt_resp = doc_respaldo.get("texto_integro")
-            return jsonify({
-                "reply": formatear_transcripcion_literal(doc_respaldo.get("nombre", "Documento"), txt_resp),
-                "is_verbatim": True,
-                "speech_text": txt_resp
-            })
         return jsonify({
             "reply": f"Error operativo controlado: {str(error_critico)}"
         })
